@@ -7,7 +7,6 @@ import calendar
 from datetime import datetime
 import joblib
 
-from src.data_retrieve import add_cfs_to_db
 from src.calculations import calculate_evaporation
 
 
@@ -222,7 +221,7 @@ def predict_cnbs(X, x_scaler, y_scaler, models_info, model_name):
 
     return df
 
-def format_predictions_and_add_to_db(database, table, df, model_name):
+def format_predictions(df, model_name):
     # Melt the DataFrame and split 'lake_cnbs' into 'lake' and 'cnbs'
     df_reset = df.reset_index()
 
@@ -236,16 +235,7 @@ def format_predictions_and_add_to_db(database, table, df, model_name):
 
     # Sort and set index
     df_melted = df_melted.sort_values(by=['cfs_run', 'month', 'year', 'lake']).set_index(['cfs_run', 'month', 'year'])
-
-    # Create a connection to the SQLite database
-    conn = sqlite3.connect(database)
-
-    # Send the DataFrame to the database
-    df_melted.to_sql(table, conn, if_exists='append', index=True)
-
-    # Close the connection
-    conn.commit()
-    conn.close()
+    return df_melted
 
 def filter_predictions(df):
     current_day = datetime.now().day

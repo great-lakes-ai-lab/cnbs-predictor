@@ -90,7 +90,7 @@ def check_url_exists(url):
         return False
     
 
-def open_database(database):
+def open_cfs_db(database):
     # Check if the database file exists
     if not os.path.exists(database):
         print(f"Creating new database: '{database}'.")
