@@ -6,9 +6,47 @@ import numpy as np
 import calendar
 from datetime import datetime
 import joblib
+import netCDF4 as nc
 
-from src.calculations import calculate_evaporation
+from src.hydro_utils import calculate_evaporation
 
+def create_directory(directory):
+    """Create a directory if it doesn't already exist."""
+    try:
+        # Check if the directory already exists
+        if not os.path.exists(directory):
+            os.makedirs(directory)
+            print(f"Directory '{directory}' created.")
+        else:
+            print(f"Directory '{directory}' already exists.")
+    except PermissionError:
+        print(f"Permission denied: Unable to create the directory '{directory}'.")
+    except Exception as e:
+        print(f"ERROR occurred while creating the directory '{directory}': {e}")
+
+def get_files(directory, affix, identifier):
+    """
+    Get a list of all files in the specified directory that match the given prefix or suffix.
+
+    Parameters:
+    - directory (str): Path to the directory containing files.
+    - affix (str): Either 'prefix' (for files starting with the identifier) or 'suffix' (for files ending with the identifier).
+    - identifier (str): The prefix or suffix to match (e.g., 'pgb', 'flx', '.grb2', or '.nc').
+
+    Returns:
+    - List of file paths that match the specified prefix or suffix.
+    """
+    files = []
+    for file_name in os.listdir(directory):
+        if affix == 'suffix': # ends with
+            if file_name.endswith(identifier):
+                file_path = os.path.join(directory, file_name)
+                files.append(file_path)
+        elif affix == 'prefix': # begins with
+            if file_name.startswith(identifier):
+                file_path = os.path.join(directory, file_name)
+                files.append(file_path)
+    return files
 
 def shift_variables(df, lag=0, lead=0):
     """
@@ -42,86 +80,153 @@ def shift_variables(df, lag=0, lead=0):
     return df
 
 def add_cfs_to_db(database, table, cfs_run, year, month, lake, surface_type, cnbs, value):
-    conn = sqlite3.connect(database)
-    cursor = conn.cursor()
+    """
+    Adds a record to the specified database table using SQLite, inserting or replacing based on primary key.
 
-    # Properly insert the table name using f-string or str.format() outside of the SQL statement
-    query = f'''
-    INSERT OR REPLACE INTO {table} (
-        cfs_run, year, month, lake, surface_type, cnbs, value
-    ) VALUES (?, ?, ?, ?, ?, ?, ?)
-    '''
+    Parameters:
+    database (str): Path to the database file.
+    table (str): Name of the table where the data should be inserted.
+    cfs_run (str): The CFS run identifier.
+    year (int): Year of the data.
+    month (int): Month of the data (should be between 1 and 12).
+    lake (str): The lake related to the data.
+    surface_type (str): The type of surface (e.g., urban, rural, etc.).
+    cnbs (str): CNBS (Curve Number) related to the data.
+    value (float): The value to be inserted.
 
-    # Insert the data into the table
-    cursor.execute(query, (cfs_run, year, month, lake, surface_type, cnbs, value))
+    Raises:
+    ValueError: If year is not an integer, month is not between 1 and 12, or any other input is invalid.
+    sqlite3.DatabaseError: If there is an error interacting with the database.
+    """
 
-    conn.commit()
-    conn.close()
+    # Input validation
+    if not isinstance(year, int):
+        raise ValueError(f"ERROR: Year must be an integer.")
+    if not (1 <= month <= 12):
+        raise ValueError(f"ERROR: Month must be between 1 and 12.")
+    if not isinstance(cfs_run, str) or not isinstance(lake, str) or not isinstance(surface_type, str) or not isinstance(cnbs, str):
+        raise ValueError("ERROR: cfs_run, lake, surface type, and CNBS must be strings.")
+    if not isinstance(value, (float, int)):
+        raise ValueError(f"ERROR: Value must be a numeric type.")
+
+    try:
+        # Connect to the database
+        conn = sqlite3.connect(database)
+        cursor = conn.cursor()
+
+        # Properly insert the table name using f-string (escaped) or str.format() outside of the SQL statement
+        query = f'''
+        INSERT OR REPLACE INTO {table} (
+            cfs_run, year, month, lake, surface_type, cnbs, value
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+        '''
+
+        # Insert the data into the table
+        cursor.execute(query, (cfs_run, year, month, lake, surface_type, cnbs, value))
+
+        # Commit the transaction and close the connection
+        conn.commit()
+        conn.close()
+
+    except sqlite3.DatabaseError as e:
+        raise sqlite3.DatabaseError(f"Database error occurred: {e}")
 
 def process_grib_files(download_dir, database, table, cfs_run, mask_lat, mask_lon, mask_ds, mask_variables, area):
+    """
+    Processes GRIB files for a given CFS run, extracting precipitation, temperature, and evaporation data,
+    then inserts the processed data into a SQLite database.
 
-    # Check to see if there are outdated index files and remove them before reopening the grib2 file
-    # This is not required but if you don't delete them first, you will get a warning as it opens each file
+    Parameters:
+    download_dir (str): The directory where GRIB files are stored.
+    database (str): Path to the SQLite database.
+    table (str): The table where the data will be inserted.
+    cfs_run (str): The CFS run identifier.
+    mask_lat (array): Latitude values for the domain.
+    mask_lon (array): Longitude values for the domain.
+    mask_ds (array): A dataset containing mask variables.
+    mask_variables (list): A list of mask variables to process.
+    area (array): Area values corresponding to the grid.
+
+    Raises:
+    ValueError: If any of the input parameters are invalid.
+    FileNotFoundError: If a required GRIB file cannot be found.
+    sqlite3.DatabaseError: If there is an error interacting with the database.
+    """
+    # Input validation
+    if not isinstance(cfs_run, str):
+        raise ValueError(f"ERROR: CFS run must be a string.")
+    if not os.path.isdir(download_dir):
+        raise ValueError(f"ERROR: The specified directory does not exist.")
+    
+    if not isinstance(mask_lat, (np.ndarray, list)) or not isinstance(mask_lon, (np.ndarray, list)):
+        raise ValueError("ERROR: mask_lat and mask_lon must be arrays or lists.")
+    if not isinstance(mask_ds, (nc.Dataset, type(None))):
+        raise ValueError("ERROR: mask_ds must be a netCDF (nc) dataset.")
+    if not isinstance(mask_variables, list):
+        raise ValueError("ERROR: mask_variables must be a list of strings.")
+    if not isinstance(area, (np.ndarray, list)):
+        raise ValueError("ERROR: area must be an array or list.")
+
+    # Remove outdated index files (optional step)
     for idx_file in [f for f in os.listdir(download_dir) if f.endswith('.idx')]:
-        #print(f'Removing outdated index file: {idx_file}')
         os.remove(os.path.join(download_dir, idx_file))
 
     # Find all the .grb2 files in the directory
     pgb_list = sorted(file for file in os.listdir(download_dir) if file.startswith(f'pgbf.01.{cfs_run}') and file.endswith('grb2'))
-    for filename in pgb_list:
-    
-        pgb_file = f'{download_dir}{filename}'
 
+    if not pgb_list:
+        raise FileNotFoundError(f"ERROR: No GRIB2 files found for CFS run {cfs_run} in {download_dir}. Please check the dataset.")
+
+    # Process each GRIB2 file
+    for filename in pgb_list:
+        pgb_file = os.path.join(download_dir, filename)
+        
+        # Extract CFS run and forecast year/month from filename
         parts = filename.split('.')
-        cfs_run = int(parts[2])
-        forecast = parts[3]  # Assuming parts[2] is in the format YYYYMM
+        forecast = parts[3]
         forecast_year = int(forecast[:4])
         forecast_month = int(forecast[4:6])
 
         _, num_days = calendar.monthrange(forecast_year, forecast_month)
 
         ## Precipitation ##
-
-        pgb_surface = cfgrib.open_dataset(pgb_file, engine='cfgrib', filter_by_keys={'typeOfLevel': 'surface'}, decode_timedelta=False)
-        pcp = pgb_surface['tp']  # Total precipitation
-        
-        # Cut the variable to the mask domain
-        pcp_cut = pcp.sel(
-            latitude=slice(mask_lat.max(), mask_lat.min()),
-            longitude=slice(mask_lon.min(), mask_lon.max())
-        )
-
-        # Remap and upscale the variable to match the mask domain
-        pcp_remap = pcp_cut.interp(latitude=mask_lat, longitude=mask_lon, method='linear')
-
-        for mask_var in mask_variables:
-            mask = mask_ds.variables[mask_var][:]
-            
-            total_pcp = (np.sum(pcp_remap * mask * area)) * 4 * num_days # pcp is for 6 hours - convert to monthly
-            pcp_mm = total_pcp / np.sum(mask * area) # kg/m2 or mm
-
-            lake_abv, surface_type = mask_var.split('_')
-            if lake_abv == 'eri': lake = 'erie'
-            elif lake_abv == 'ont': lake = 'ontario'
-            elif lake_abv == 'sup': lake = 'superior'
-            elif lake_abv == 'mih': lake = 'michigan-huron'
-            else: print("Error: The mask variables need to begin with 'eri', 'ont', 'sup', or 'mih'. Check the mask file and try again.")
-
-            # Insert data to dataframe
-            add_cfs_to_db(database, table, cfs_run, forecast_year, forecast_month, lake, surface_type, 'precipitation', pcp_mm.item())
-
-        ## 2 m Temperature ##
-
-        # Open the corresponding flx file
-        flx_file = f"{download_dir}flxf.01.{cfs_run}.{forecast}.avrg.grib.grb2"
-
         try:
-            # Open the flx file at the 2m level to pull the 2m air temperature
+            pgb_surface = cfgrib.open_dataset(pgb_file, engine='cfgrib', filter_by_keys={'typeOfLevel': 'surface'}, decode_timedelta=False)
+            pcp = pgb_surface['tp']  # Total precipitation
+
+            # Cut the variable to the mask domain
+            pcp_cut = pcp.sel(
+                latitude=slice(mask_lat.max(), mask_lat.min()),
+                longitude=slice(mask_lon.min(), mask_lon.max())
+            )
+
+            # Remap and upscale the variable to match the mask domain
+            pcp_remap = pcp_cut.interp(latitude=mask_lat, longitude=mask_lon, method='linear')
+
+            for mask_var in mask_variables:
+                mask = mask_ds.variables[mask_var][:]
+                total_pcp = (np.sum(pcp_remap * mask * area)) * 4 * num_days  # Convert 6-hour data to monthly
+                pcp_mm = total_pcp / np.sum(mask * area)  # Convert to mm
+
+                lake_abv, surface_type = mask_var.split('_')
+                lake = {'eri': 'erie', 'ont': 'ontario', 'sup': 'superior', 'mih': 'michigan-huron'}.get(lake_abv)
+                if lake is None:
+                    raise ValueError(f"ERROR: The mask variables need to begin with 'eri', 'ont', 'sup', or 'mih'. Check the mask file.")
+
+                # Insert precipitation data into the database
+                add_cfs_to_db(database, table, cfs_run, forecast_year, forecast_month, lake, surface_type, 'precipitation', pcp_mm.item())
+
+        except KeyError as e:
+            print(f"ERROR processing precipitation data: {e}")
+        
+        ## 2 m Temperature ##
+        try:
+            flx_file = os.path.join(download_dir, f"flxf.01.{cfs_run}.{forecast}.avrg.grib.grb2")
             flx_2mabove = cfgrib.open_dataset(flx_file, engine='cfgrib', filter_by_keys={'typeOfLevel': 'heightAboveGround', 'level': 2}, decode_timedelta=False)
             try:
                 mean2t = flx_2mabove['mean2t']
             except KeyError:
-                print("mean2t not found in flux file, trying avg_2t.")
+                print("'mean2t' not found in flux file, trying 'avg_2t'.")
                 mean2t = flx_2mabove['avg_2t']
 
             # Cut the variable to the mask domain
@@ -129,84 +234,110 @@ def process_grib_files(download_dir, database, table, cfs_run, mask_lat, mask_lo
                 latitude=slice(mask_lat.max(), mask_lat.min()),
                 longitude=slice(mask_lon.min(), mask_lon.max())
             )
+
             # Remap and upscale the variable to match the mask domain
             mean2t_remap = mean2t_cut.interp(latitude=mask_lat, longitude=mask_lon, method='linear')
-            
-            # Calculate mean2t for each of the mask variables (i.e., eri_lake, eri_basin, etc.)
+
             for mask_var in mask_variables:
-
-                # Have to change the mask from fractional to all 1s and 0s
-                mask_tmp = mask_ds.variables[mask_var][:]
-                mask = np.ma.masked_where(np.isnan(mask_tmp), np.ones_like(mask_tmp))
-
-                # Take the mean over the mask area
+                mask = np.ma.masked_where(np.isnan(mask_ds.variables[mask_var][:]), np.ones_like(mask_ds.variables[mask_var][:]))
                 tmp_avg = np.mean(mean2t_remap * mask)
 
                 lake_abv, surface_type = mask_var.split('_')
-                if lake_abv == 'eri': lake = 'erie'
-                elif lake_abv == 'ont': lake = 'ontario'
-                elif lake_abv == 'sup': lake = 'superior'
-                elif lake_abv == 'mih': lake = 'michigan-huron'
-                else: print("Error: The mask variables need to begin with 'eri', 'ont', 'sup', or 'mih'. Check the mask file and try again.")
+                lake = {'eri': 'erie', 'ont': 'ontario', 'sup': 'superior', 'mih': 'michigan-huron'}.get(lake_abv)
+                if lake is None:
+                    raise ValueError(f"ERROR: The mask variables need to begin with 'eri', 'ont', 'sup', or 'mih'. Check the mask file.")
 
-                # Insert data to dataframe
+                # Insert air temperature data into the database
                 add_cfs_to_db(database, table, cfs_run, forecast_year, forecast_month, lake, surface_type, 'air_temperature', tmp_avg.item())
 
-            ## Evaporation ##
+        except KeyError as e:
+            print(f"ERROR processing temperature data: {e}")
 
-            # Open the flx file again but at the surface level to pull the latent heat flux
+        ## Evaporation ##
+        try:
             flx_surface = cfgrib.open_dataset(flx_file, engine='cfgrib', filter_by_keys={'typeOfLevel': 'surface'}, decode_timedelta=False)
             try:
                 mslhf = flx_surface['mslhf']
             except KeyError:
-                print("mslhf not found in flux file, trying avg_slhtf.")
+                print("'mslhf' not found in flux file, trying 'avg_slhtf'.")
                 mslhf = flx_surface['avg_slhtf']
-            
+
             # Cut the variable to the mask domain
             mslhf_cut = mslhf.sel(
                 latitude=slice(mask_lat.max(), mask_lat.min()),
                 longitude=slice(mask_lon.min(), mask_lon.max())
             )
+
             # Remap and upscale the variable to match the mask domain
             mslhf_remap = mslhf_cut.interp(latitude=mask_lat, longitude=mask_lon, method='linear')
 
-            # Calculate evaporation across the entire domain using air temp and latent heat flux
+            # Calculate evaporation using air temp and latent heat flux
             evap = calculate_evaporation(mean2t_remap, mslhf_remap)
 
-            # Calculate evaporation for each of the mask variables (i.e., eri_lake, eri_land, etc.)
             for mask_var in mask_variables:
-                
                 mask = mask_ds.variables[mask_var][:]
-                total_evap = (np.sum(evap * area * mask)) * num_days * 86400 # total in kg/sm2 * num of seconds in a month = kg/m2 or mm
+                total_evap = (np.sum(evap * area * mask)) * num_days * 86400  # Convert to mm
                 evap_mm = total_evap / np.sum(mask * area)
 
                 lake_abv, surface_type = mask_var.split('_')
-                if lake_abv == 'eri': lake = 'erie'
-                elif lake_abv == 'ont': lake = 'ontario'
-                elif lake_abv == 'sup': lake = 'superior'
-                elif lake_abv == 'mih': lake = 'michigan-huron'
-                else: print("Error: The mask variables need to begin with 'eri', 'ont', 'sup', or 'mih'. Check the mask file and try again.")
+                lake = {'eri': 'erie', 'ont': 'ontario', 'sup': 'superior', 'mih': 'michigan-huron'}.get(lake_abv)
+                if lake is None:
+                    raise ValueError(f"ERROR: The mask variables need to begin with 'eri', 'ont', 'sup', or 'mih'. Check the mask file.")
 
-                # Insert data to dataframe
+                # Insert evaporation data into the database
                 add_cfs_to_db(database, table, cfs_run, forecast_year, forecast_month, lake, surface_type, 'evaporation', evap_mm.item())
 
-        except FileNotFoundError: print(f"Error: The flx file that cooresponds to {pgb_file} does not exist. Please check the dataset is complete and try again.")
+        except KeyError as e:
+            print(f"ERROR processing evaporation data: {e}")
+
+        except FileNotFoundError:
+            print(f"ERROR: The flx file corresponding to {pgb_file} does not exist. Please check the dataset and try again.")
 
 def predict_cnbs(X, x_scaler, y_scaler, models_info, model_name):
-    # Standardize the data
-    x_scaler, y_scaler = joblib.load(x_scaler), joblib.load(y_scaler)
+    """
+    Predicts Components of Net Basin Supply for the lakes.
+    
+    Parameters:
+    X (pd.DataFrame): The input data to predict the CNBS values. It should be a DataFrame.
+    x_scaler (str): The file path to the scaler used for the input data.
+    y_scaler (str): The file path to the scaler used for the target data.
+    models_info (list): A list of dictionaries containing model information.
+    model_name (str): The name of the model to be used for prediction.
+
+    Returns:
+    pd.DataFrame: A DataFrame containing the predicted CNBS values for each lake.
+    """
+    # Input validation
+    if not isinstance(X, pd.DataFrame):
+        raise ValueError("ERROR: X must be a pandas DataFrame.")
+    
+    # Load scalers from the provided file paths
+    try:
+        x_scaler, y_scaler = joblib.load(x_scaler), joblib.load(y_scaler)
+    except FileNotFoundError as e:
+        raise FileNotFoundError(f"ERROR loading scalers: {e}")
+    
+    # Standardize the input data using the loaded scaler
     X_scaled = x_scaler.transform(X)
 
-    # Find the model path by filtering the list of models
+    # Find the model path from the models_info list
     model_info = next((model for model in models_info if model['model'] == model_name), None)
     if not model_info:
-        print('Model name is not recognized.')
-        return None
+        raise ValueError(f"ERROR: Model name '{model_name}' is not recognized in the provided models_info list.")
+    
+    # Load the model
+    try:
+        model_loaded = joblib.load(model_info['path'])
+    except FileNotFoundError as e:
+        raise FileNotFoundError(f"ERROR loading model from {model_info['path']}: {e}")
 
-    model_loaded = joblib.load(model_info['path'])
+    # Predict the scaled output
     y_pred_scaled = model_loaded.predict(X_scaled)
+
+    # Inverse transform to get the original scale
     y_pred = y_scaler.inverse_transform(y_pred_scaled)
 
+    # Define column names for the predictions
     column_names = ['superior_evaporation', 'superior_precipitation', 'superior_runoff',
                     'erie_evaporation', 'erie_precipitation', 'erie_runoff',
                     'ontario_evaporation', 'ontario_precipitation', 'ontario_runoff',
@@ -222,53 +353,130 @@ def predict_cnbs(X, x_scaler, y_scaler, models_info, model_name):
     return df
 
 def format_predictions(df, model_name):
-    # Melt the DataFrame and split 'lake_cnbs' into 'lake' and 'cnbs'
+    """
+    Formats the predictions DataFrame by melting it, splitting lake and CNBS, 
+    and adding relevant columns for easier interpretation before adding it to a database.
+
+    Parameters:
+    df (pd.DataFrame): The DataFrame containing predictions, with lakes and CNBS values.
+    model_name (str): The name of the model that generated the predictions.
+
+    Returns:
+    pd.DataFrame: A formatted DataFrame with columns for the model, lake, CNBS, and other metadata.
+    """
+    # Input validation
+    if not isinstance(df, pd.DataFrame):
+        raise ValueError("ERROR: The input 'df' must be a pandas DataFrame.")
+    
+    if not isinstance(model_name, str):
+        raise ValueError("ERROR: The 'model_name' must be a string.")
+
+    # Ensure necessary columns are present
+    required_columns = ['cfs_run', 'month', 'year']
+    if not all(col in df.columns for col in required_columns):
+        raise ValueError(f"ERROR: The DataFrame must contain the following columns: {', '.join(required_columns)}")
+
+    # Reset the index to ensure proper melting
     df_reset = df.reset_index()
 
-    # Melt the DataFrame with the columns as id_vars
+    # Melt the DataFrame from wide format to long format
     df_melted = df_reset.melt(id_vars=['cfs_run', 'month', 'year'], var_name='lake_cnbs', value_name='value')
+
+    # Split the 'lake_cnbs' column into two separate columns: 'lake' and 'cnbs'
     df_melted[['lake', 'cnbs']] = df_melted['lake_cnbs'].str.split('_', expand=True)
 
-    # Add model column and rearrange
+    # Add model column and rearrange the DataFrame
     df_melted['model'] = model_name
     df_melted = df_melted.drop(columns=['lake_cnbs'])[['cfs_run', 'month', 'year', 'model', 'lake', 'cnbs', 'value']]
 
-    # Sort and set index
+    # Sort the DataFrame by cfs_run, month, year, and lake, then set the appropriate index
     df_melted = df_melted.sort_values(by=['cfs_run', 'month', 'year', 'lake']).set_index(['cfs_run', 'month', 'year'])
+
     return df_melted
 
 def filter_predictions(df):
+    """
+    Filters the predictions DataFrame based on the current date. If the current day is greater than or equal to the 26th,
+    the function will remove the current and previous months' forecasts. Otherwise, it will keep the current month's forecast
+    and all future months. This was a request by USACE.
+
+    Parameters:
+    df (pd.DataFrame): The predictions DataFrame, with a MultiIndex containing 'year' and 'month'.
+
+    Returns:
+    pd.DataFrame: The filtered DataFrame, with data only for future months or the appropriate forecast month.
+    """
+    # Input validation
+    if not isinstance(df, pd.DataFrame):
+        raise ValueError("ERROR: The input 'df' must be a pandas DataFrame.")
+    
+    if not all(col in df.index.names for col in ['year', 'month']):
+        raise ValueError("ERROR: The DataFrame index must have 'year' and 'month' as levels.")
+    
+    # Get the current date
     current_day = datetime.now().day
     current_month = datetime.now().month
     current_year = datetime.now().year
 
+    # Extract year and month from the DataFrame index
     pred_year = df.index.get_level_values('year')
     pred_month = df.index.get_level_values('month')
 
-    # Determine filtering condition based on the day of the month
+    # Determine filtering condition based on the current day of the month
     if current_day >= 26:
         # Remove this month and all previous months
         filtered_df = df[
             (pred_year > current_year) |
-            (pred_year == current_year) & (pred_month > current_month)
+            ((pred_year == current_year) & (pred_month > current_month))
         ]
-        print(f"First month forecast: {current_month+1}")
+        print(f"First month forecast: {current_month + 1}")
     else:
-        # Keep this month
+        # Keep this month and all future months
         filtered_df = df[
             (pred_year > current_year) |
             ((pred_year == current_year) & (pred_month >= current_month))
         ]
         print(f"First month forecast: {current_month}")
+
     return filtered_df
 
 def add_df_to_db(database, table, df):    
-    # Create a connection to the SQLite database
-    conn = sqlite3.connect(database)
+    """
+    Adds a DataFrame to a specified table in an database using SQLite .
 
-    # Send the DataFrame to the database
-    df.to_sql(table, conn, if_exists='append', index=True)
+    Parameters:
+    database (str): The path to the SQLite database file.
+    table (str): The name of the table to which data should be added.
+    df (pd.DataFrame): The DataFrame containing the data to be inserted into the table.
 
-    # Close the connection
-    conn.commit()
-    conn.close()
+    Returns:
+    None
+    """
+    # Input validation
+    if not isinstance(df, pd.DataFrame):
+        raise ValueError("ERROR: The input 'df' must be a pandas DataFrame.")
+    
+    # Ensure the DataFrame is not empty
+    if df.empty:
+        raise ValueError("ERROR: The input DataFrame is empty.")
+    
+    if not isinstance(database, str):
+        raise ValueError("ERROR: The 'database' parameter must be a string.")
+    
+    if not isinstance(table, str):
+        raise ValueError("ERROR: The 'table' parameter must be a string.")
+
+    try:
+        # Create a connection to the SQLite database
+        conn = sqlite3.connect(database)
+        
+        # Send the DataFrame to the database
+        df.to_sql(table, conn, if_exists='append', index=True)  # if_exists='append' will add data without replacing
+
+        # Commit and close the connection
+        conn.commit()
+    except sqlite3.Error as e:
+        print(f"ERROR inserting data into the database: {e}")
+    finally:
+        # Ensure the connection is closed even if an error occurs
+        conn.close()
