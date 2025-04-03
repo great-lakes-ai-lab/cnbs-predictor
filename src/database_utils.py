@@ -1,10 +1,9 @@
 import urllib.request
 from bs4 import BeautifulSoup
-import os
 import boto3
 from botocore import UNSIGNED
-from botocore.config import Config
-from botocore.exceptions import NoCredentialsError, PartialCredentialsError
+from botocore.client import Config
+import os
 import requests
 import sqlite3
 from datetime import datetime, timedelta
@@ -21,110 +20,73 @@ def download_grb2_ncei(product, url_path, download_dir):
     Returns:
     None
     """
-    # Input validation
-    if not isinstance(product, str):
-        raise ValueError("ERROR: The 'product' parameter must be a string.")
-    
-    if not isinstance(url_path, str):
-        raise ValueError("ERROR: The 'url_path' parameter must be a string representing the NCEI URL path.")
-    
-    if not isinstance(download_dir, str):
-        raise ValueError("ERROR: The 'download_dir' parameter must be a string representing the local download directory.")
-    
-    if not os.path.exists(download_dir):
-        raise ValueError(f"ERROR: The specified download directory does not exist: {download_dir}")
 
     try:
-        # Open the URL and parse the HTML content
         response = urllib.request.urlopen(url_path)
         html_content = response.read().decode('utf-8')
         soup = BeautifulSoup(html_content, 'html.parser')
-        
-        # Find all links that match the product type and end with 'grib.grb2'
         links = soup.find_all('a', href=lambda href: href and href.startswith(product) and href.endswith('grib.grb2'))
         
-        # Download the files
         for link in links:
             file_url = url_path + link['href']
             filename = link['href'].split('/')[-1]
             file_path = os.path.join(download_dir, filename)
-            
-            # Download the file
             urllib.request.urlretrieve(file_url, file_path)
             print(f"Downloaded: {filename}")
 
-    except urllib.request.URLError as e:
-        print(f"ERROR with the URL request: {e}")
     except Exception as e:
         print(f"ERROR: {e}")
+
 
 def download_grb2_aws(product, bucket_name, url_path, download_dir):
     """
-    Downloads GRB2 CFS forecast files from Amazon Web Services (AWS).
+    Download the CFS forecast from AWS
 
     Parameters:
-    - product (str): 'flx' or 'pgb' (specifies the product type)
-    - bucket_name (str): The name of the S3 bucket (e.g., 'noaa-cfs-pds' for CFS data)
-    - url_path (str): The S3 URL path to the data within the bucket
-    - download_dir (str): Local directory where the downloaded data should be stored
+    - product: 'flx' or 'pgb'
+    - bucket_name: for CFS data it is 'noaa-cfs-pds'
+    - url_path: the url path to data
+    - download_dir: location to download data to
     """
-    # Input validation
-    if not isinstance(product, str):
-        raise ValueError("ERROR: The 'product' parameter must be a string.")
-    
-    if not isinstance(bucket_name, str):
-        raise ValueError("ERROR: The 'bucket_name' parameter must be a string.")
-    
-    if not isinstance(url_path, str):
-        raise ValueError("ERROR: The 'url_path' parameter must be a string representing the S3 URL path.")
-    
-    if not isinstance(download_dir, str):
-        raise ValueError("ERROR: The 'download_dir' parameter must be a string representing the local download directory.")
-    
-    if not os.path.exists(download_dir):
-        raise ValueError(f"ERROR: The specified download directory does not exist: {download_dir}")
+    num_files_downloaded = 0
 
-    # Create a boto3 client for S3 with unsigned requests (no AWS credentials needed)
-    s3_config = Config(signature_version='UNSIGNED')
+    # Create a boto3 client for S3
+    s3_config = Config(signature_version=UNSIGNED)
     s3 = boto3.client('s3', config=s3_config)
 
-    try:
-        # List all objects in the specified folder path, handling pagination if needed
-        continuation_token = None
-        objects = []
+    # List all objects in the specified folder path
+    continuation_token = None
+    objects = []
 
-        while True:
-            list_objects_args = {'Bucket': bucket_name, 'Prefix': url_path}
-            if continuation_token:
-                list_objects_args['ContinuationToken'] = continuation_token
+    # Use a loop to handle pagination
+    while True:
+        list_objects_args = {'Bucket': bucket_name, 'Prefix': url_path}
+        if continuation_token:
+            list_objects_args['ContinuationToken'] = continuation_token
 
-            list_objects_response = s3.list_objects_v2(**list_objects_args)
-            objects.extend(list_objects_response.get('Contents', []))
+        list_objects_response = s3.list_objects_v2(**list_objects_args)
 
-            if not list_objects_response.get('IsTruncated', False):
-                break
+        objects.extend(list_objects_response.get('Contents', []))
 
-            continuation_token = list_objects_response.get('NextContinuationToken')
+        if not list_objects_response.get('IsTruncated', False):
+            break
 
-        # Iterate over each object and download if it matches the product and ends with 'grib.grb2'
-        for obj in objects:
-            key = obj['Key']
-            if product in key and key.endswith('grib.grb2'):
-                local_file_path = os.path.join(download_dir, os.path.relpath(key, url_path))
+        continuation_token = list_objects_response.get('NextContinuationToken')
 
-                # Ensure the directory structure exists
-                os.makedirs(os.path.dirname(local_file_path), exist_ok=True)
+    # Iterate over each object and download if it ends with '.grb2'
+    for obj in objects:
+        key = obj['Key']
+        if product in key and key.endswith('grib.grb2'): #if key.endswith('.grb2'):
+            local_file_path = os.path.join(download_dir, os.path.relpath(key, url_path))
 
-                # Download the file
-                s3.download_file(bucket_name, key, local_file_path)
-                print(f"Downloaded: {key}")
+            # Ensure the directory structure exists
+            os.makedirs(os.path.dirname(local_file_path), exist_ok=True)
 
-    except NoCredentialsError:
-        print("ERROR: No AWS credentials were found. Ensure that your environment is properly configured.")
-    except PartialCredentialsError:
-        print("ERROR: Incomplete AWS credentials found. Please ensure all necessary credentials are provided.")
-    except Exception as e:
-        print(f"ERROR: {e}")
+            # Download the file
+            s3.download_file(bucket_name, key, local_file_path)
+            num_files_downloaded += 1
+
+            print(f"Downloaded: {key}")
 
 def check_url_exists(url):
     """
@@ -175,9 +137,9 @@ def open_cfs_db(database):
             month INTEGER,
             lake TEXT,
             surface_type TEXT,
-            cnbs TEXT,
-            value REAL,
-            PRIMARY KEY (cfs_run, year, month, lake, surface_type, cnbs)
+            component TEXT,
+            value [mm] REAL,
+            PRIMARY KEY (cfs_run, year, month, lake, surface_type, component)
         )
         ''')
 
@@ -192,7 +154,7 @@ def open_cfs_db(database):
         return None, None
 
 
-def pull_from_db(database, table, cfs_run, year, month, lake, surface_type, cnbs):
+def pull_from_db(database, table, cfs_run, year, month, lake, surface_type, component):
     """
     Pulls a value from the database based on specific query parameters.
 
@@ -204,10 +166,10 @@ def pull_from_db(database, table, cfs_run, year, month, lake, surface_type, cnbs
     - month (int): The forecast month.
     - lake (str): The lake name.
     - surface_type (str): The type of surface ('land' or 'lake').
-    - cnbs (str): The CNBS type (e.g., 'precipitation', 'evaporation').
+    - component (str): The CNBS type (e.g., 'precipitation', 'evaporation').
 
     Returns:
-    - value (float or None): The value for the specified query parameters, or None if not found or an error occurs.
+    - value [mm] (float or None): The value for the specified query parameters, or None if not found or an error occurs.
     """
     try:
         # Establish a connection to the SQLite database
@@ -216,8 +178,8 @@ def pull_from_db(database, table, cfs_run, year, month, lake, surface_type, cnbs
 
         # SQL query to fetch the value from the specified table
         query = f'''
-        SELECT value FROM {table}
-        WHERE cfs_run = ? AND year = ? AND month = ? AND lake = ? AND surface_type = ? AND cnbs = ?
+        SELECT "value [mm]" FROM {table}
+        WHERE cfs_run = ? AND year = ? AND month = ? AND lake = ? AND surface_type = ? AND component = ?
         '''
 
         # Execute the query with the provided parameters
@@ -233,7 +195,7 @@ def pull_from_db(database, table, cfs_run, year, month, lake, surface_type, cnbs
         if result:
             return result[0]
         else:
-            print(f"ERROR: No data found for cfs_run={cfs_run}, year={year}, month={month}, lake={lake}, surface_type={surface_type}, cnbs={cnbs}")
+            print(f"ERROR: No data found for cfs_run={cfs_run}, year={year}, month={month}, lake={lake}, surface_type={surface_type}, component={component}")
             return None
 
     except sqlite3.Error as e:

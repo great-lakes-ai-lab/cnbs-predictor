@@ -97,120 +97,34 @@ def calculate_evaporation(temperature_K, latent_heat):
 
     return evaporation_rate
 
-def convert_cms_to_mm(df_cms):
+def convert_mm_to_cms(df):
     """
-    Convert data from cubic meters per second (cms) to millimeters (mm) based on surface area and seconds in each month.
-    
-    Parameters:
-    df_cms (pandas.DataFrame): A DataFrame containing data in [cms]. Each column should represent a different lake 
-                               beginning with 'erie', 'superior', 'michigan-huron', 'ontario' and the index should be the year and month.
+    Converts the 'value [mm]' in the dataframe to 'value [cms]' (cubic meters per second) based on lake surface area and the number of seconds in the month.
+
+    Args:
+    - df (pd.DataFrame): DataFrame containing the columns 'value [mm]', 'lake', and a multi-index with 'month' and 'year'.
     
     Returns:
-    pandas.DataFrame: Converted data in millimeters (mm), with the same structure as df_cms.
-    
-    Raises:
-    ValueError: If the input DataFrame does not contain the expected columns or the surface area values are missing,
-                or if the index does not contain valid year and month.
+    - pd.DataFrame: DataFrame with a new column 'value [cms]' representing the value in cubic meters per second.
     """
-    # Check if input is a DataFrame
-    if not isinstance(df_cms, pd.DataFrame):
-        raise ValueError("ERROR: Input must be a pandas DataFrame.")
-    
-    # Check if the required region columns are present in the DataFrame
-    required_columns = ['erie', 'superior', 'michigan-huron', 'ontario']
-    if not any(df_cms.columns.str.startswith(col) for col in required_columns):
-        raise ValueError("ERROR: DataFrame must contain columns with region data starting with 'erie', 'superior', 'michigan-huron', 'ontario'.")
-    
-    # Check if the index contains year and month (index should be 2D: year and month)
-    for idx in df_cms.index:
-        if len(idx) != 2:
-            raise ValueError(f"ERROR: Index should contain both year and month.")
-        year, month = idx
-        # Check that the year is an integer and the month is between 1 and 12
-        if not isinstance(year, int) or not (1 <= month <= 12):
-            raise ValueError(f"ERROR: Year should be an integer and month should be between 1 and 12.")
-        
-    # Create a copy of the dataframe so we aren't altering the df_cms
-    df_mm = df_cms.copy()
 
-    sa_sup = 82097*1000000
-    sa_mih = (57753 + 5956)*1000000
-    sa_eri = 25655*1000000
-    sa_ont = 19009*1000000
+    # Dictionary storing the surface area (in square meters) for each lake
+    lake_sa = {
+        'superior': 82097 * 1000000,       # Lake Superior area in square meters
+        'michigan-huron': (57753 + 5956) * 1000000,  # Lake Michigan-Huron combined area in square meters
+        'erie': 25655 * 1000000,           # Lake Erie area in square meters
+        'ontario': 19009 * 1000000         # Lake Ontario area in square meters
+    }
     
-    # Calculate the number of seconds for each month
-    df_mm['seconds'] = df_mm.apply(lambda row: seconds_in_month(int(row.name[0]), int(row.name[1])), axis=1)
-
-    # value_cms / surface_area * seconds_in_a_month = m * 1000 = mm
-    for column in df_mm.columns:
-        if column.startswith("erie"):
-            df_mm[column] = df_mm[column] / sa_eri * df_mm['seconds'] * 1000
-        elif column.startswith("superior"):
-            df_mm[column] = df_mm[column] / sa_sup * df_mm['seconds'] * 1000
-        elif column.startswith("michigan-huron"):
-            df_mm[column] = df_mm[column] / sa_mih * df_mm['seconds'] * 1000
-        elif column.startswith("ontario"):
-            df_mm[column] = df_mm[column] / sa_ont * df_mm['seconds'] * 1000
-
-    # Deleting column 'seconds'
-    df_final_mm = df_mm.drop('seconds', axis=1)
-
-    return df_final_mm
-
-def convert_mm_to_cms(df_mm):
-    """
-    Convert data from millimeters (mm) to cubic meters per second (cms) based on surface area and seconds in each month.
+    # Apply the conversion formula for each row in the dataframe
+    df['value [cms]'] = df.apply(
+        lambda row: (
+            # Convert mm to meters, multiply by the lake surface area, and divide by seconds in the given month
+            (row['value [mm]'] / 1000) * lake_sa.get(row['lake'], 0) / 
+            seconds_in_month(row.name[2], row.name[1])  # seconds_in_month() needs to be defined elsewhere
+        ), axis=1
+    )
     
-    Parameters:
-    df_mm (pandas.DataFrame): A DataFrame containing data in [mm]. Each column should represent a different lake 
-                               beginning with 'erie', 'superior', 'michigan-huron', 'ontario' and the index should be the year and month.
-    
-    Returns:
-    pandas.DataFrame: Converted data in cubic meters per second (cms), with the same structure as df_mm.
-    
-    Raises:
-    ValueError: If the input DataFrame does not contain the expected columns or the surface area values are missing,
-                or if the index does not contain valid year and month.
-    """
-# Check if input is a DataFrame
-    if not isinstance(df_mm, pd.DataFrame):
-        raise ValueError("Input must be a pandas DataFrame.")
-    
-    # Check if the index contains year and month (index should be 2D: year and month)
-    for idx in df_mm.index:
-        if len(idx) != 2:
-            raise ValueError(f"Index should contain both year and month, but index {idx} is invalid.")
-        year, month = idx
-        # Check that the year is an integer and the month is between 1 and 12
-        if not isinstance(year, int) or not (1 <= month <= 12):
-            raise ValueError(f"Invalid year or month in index {idx}. Year should be an integer and month should be between 1 and 12.")
-    
-    # Create a copy of the dataframe so we aren't altering the original df_mm
-    df_cms = df_mm.copy()
-
-    # Surface areas in square meters (multiplied by 10^6 to avoid working with large numbers)
-    sa_sup = 82097 * 1000000
-    sa_mih = (57753 + 5956) * 1000000
-    sa_eri = 25655 * 1000000
-    sa_ont = 19009 * 1000000
-    
-    # Calculate the number of seconds for each month
-    # Assuming the `seconds_in_month` function is correctly defined
-    df_cms['seconds'] = df_cms.apply(lambda row: seconds_in_month(int(row.name[0]), int(row.name[1])), axis=1)
-
-    # Value conversion: value_mm / 1000 [to convert to m] * surface_area / seconds_in_a_month
-    for column in df_mm.columns:
-        if column.startswith("erie"):
-            df_cms[column] = ((df_cms[column] / 1000) * sa_eri) / df_cms['seconds']
-        elif column.startswith("superior"):
-            df_cms[column] = ((df_cms[column] / 1000) * sa_sup) / df_cms['seconds']
-        elif column.startswith("michigan-huron"):
-            df_cms[column] = ((df_cms[column] / 1000) * sa_mih) / df_cms['seconds']
-        elif column.startswith("ontario"):
-            df_cms[column] = ((df_cms[column] / 1000) * sa_ont) / df_cms['seconds']
-
-    # Deleting the 'seconds' column after calculation
-    df_final_cms = df_cms.drop('seconds', axis=1)
-
-    return df_final_cms
+    # Return the modified DataFrame with the new 'value [cms]' column
+    return df
 
