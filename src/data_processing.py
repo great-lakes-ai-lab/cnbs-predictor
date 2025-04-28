@@ -79,7 +79,7 @@ def shift_variables(df, lag=0, lead=0):
 
     return df
 
-def add_cfs_to_db(database, table, cfs_run, year, month, lake, surface_type, cnbs, value):
+def add_cfs_to_db(database, table, cfs_run, year, month, lake, surface_type, component, value):
     """
     Adds a record to the specified database table using SQLite, inserting or replacing based on primary key.
 
@@ -87,12 +87,12 @@ def add_cfs_to_db(database, table, cfs_run, year, month, lake, surface_type, cnb
     database (str): Path to the database file.
     table (str): Name of the table where the data should be inserted.
     cfs_run (str): The CFS run identifier.
-    year (int): Year of the data.
-    month (int): Month of the data (should be between 1 and 12).
+    year (int): Forecast year (2024, 2025, etc.).
+    month (int): Forecast month (should be between 1 and 12).
     lake (str): The lake related to the data.
-    surface_type (str): The type of surface (e.g., urban, rural, etc.).
-    cnbs (str): CNBS (Curve Number) related to the data.
-    value (float): The value to be inserted.
+    surface_type (str): Surface type over 'lake' or 'land'.
+    component (str): NBS Component ('precipitation', 'evaporation', 'runoff', or 'cnbs').
+    value (float): The value in millimeters [mm].
 
     Raises:
     ValueError: If year is not an integer, month is not between 1 and 12, or any other input is invalid.
@@ -104,7 +104,7 @@ def add_cfs_to_db(database, table, cfs_run, year, month, lake, surface_type, cnb
         raise ValueError(f"ERROR: Year must be an integer.")
     if not (1 <= month <= 12):
         raise ValueError(f"ERROR: Month must be between 1 and 12.")
-    if not isinstance(cfs_run, str) or not isinstance(lake, str) or not isinstance(surface_type, str) or not isinstance(cnbs, str):
+    if not isinstance(cfs_run, str) or not isinstance(lake, str) or not isinstance(surface_type, str) or not isinstance(component, str):
         raise ValueError("ERROR: cfs_run, lake, surface type, and CNBS must be strings.")
     if not isinstance(value, (float, int)):
         raise ValueError(f"ERROR: Value must be a numeric type.")
@@ -117,12 +117,12 @@ def add_cfs_to_db(database, table, cfs_run, year, month, lake, surface_type, cnb
         # Properly insert the table name using f-string (escaped) or str.format() outside of the SQL statement
         query = f'''
         INSERT OR REPLACE INTO {table} (
-            cfs_run, year, month, lake, surface_type, cnbs, value
+            cfs_run, year, month, lake, surface_type, component, "value [mm]"
         ) VALUES (?, ?, ?, ?, ?, ?, ?)
         '''
 
         # Insert the data into the table
-        cursor.execute(query, (cfs_run, year, month, lake, surface_type, cnbs, value))
+        cursor.execute(query, (cfs_run, year, month, lake, surface_type, component, value))
 
         # Commit the transaction and close the connection
         conn.commit()
@@ -352,48 +352,6 @@ def predict_cnbs(X, x_scaler, y_scaler, models_info, model_name):
 
     return df
 
-def format_predictions(df, model_name):
-    """
-    Formats the predictions DataFrame by melting it, splitting lake and CNBS, 
-    and adding relevant columns for easier interpretation before adding it to a database.
-
-    Parameters:
-    df (pd.DataFrame): The DataFrame containing predictions, with lakes and CNBS values.
-    model_name (str): The name of the model that generated the predictions.
-
-    Returns:
-    pd.DataFrame: A formatted DataFrame with columns for the model, lake, CNBS, and other metadata.
-    """
-    # Input validation
-    if not isinstance(df, pd.DataFrame):
-        raise ValueError("ERROR: The input 'df' must be a pandas DataFrame.")
-    
-    if not isinstance(model_name, str):
-        raise ValueError("ERROR: The 'model_name' must be a string.")
-
-    # Ensure necessary columns are present
-    required_columns = ['cfs_run', 'month', 'year']
-    if not all(col in df.columns for col in required_columns):
-        raise ValueError(f"ERROR: The DataFrame must contain the following columns: {', '.join(required_columns)}")
-
-    # Reset the index to ensure proper melting
-    df_reset = df.reset_index()
-
-    # Melt the DataFrame from wide format to long format
-    df_melted = df_reset.melt(id_vars=['cfs_run', 'month', 'year'], var_name='lake_cnbs', value_name='value')
-
-    # Split the 'lake_cnbs' column into two separate columns: 'lake' and 'cnbs'
-    df_melted[['lake', 'cnbs']] = df_melted['lake_cnbs'].str.split('_', expand=True)
-
-    # Add model column and rearrange the DataFrame
-    df_melted['model'] = model_name
-    df_melted = df_melted.drop(columns=['lake_cnbs'])[['cfs_run', 'month', 'year', 'model', 'lake', 'cnbs', 'value']]
-
-    # Sort the DataFrame by cfs_run, month, year, and lake, then set the appropriate index
-    df_melted = df_melted.sort_values(by=['cfs_run', 'month', 'year', 'lake']).set_index(['cfs_run', 'month', 'year'])
-
-    return df_melted
-
 def filter_predictions(df):
     """
     Filters the predictions DataFrame based on the current date. If the current day is greater than or equal to the 26th,
@@ -471,7 +429,7 @@ def add_df_to_db(database, table, df):
         conn = sqlite3.connect(database)
         
         # Send the DataFrame to the database
-        df.to_sql(table, conn, if_exists='append', index=True)  # if_exists='append' will add data without replacing
+        df.to_sql(table, conn, if_exists='append', index=False)  # if_exists='append' will add data without replacing
 
         # Commit and close the connection
         conn.commit()
