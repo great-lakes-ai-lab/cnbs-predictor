@@ -175,7 +175,8 @@ def process_grib_files(download_dir, database, table, cfs_run, mask_lat, mask_lo
     pgb_list = sorted(file for file in os.listdir(download_dir) if file.startswith(f'pgbf.01.{cfs_run}') and file.endswith('grb2'))
 
     if not pgb_list:
-        raise FileNotFoundError(f"ERROR: No GRIB2 files found for CFS run {cfs_run} in {download_dir}. Please check the dataset.")
+        print(f"ERROR: PGB files not found for CFS run {cfs_run} in {download_dir}. Skipping forecast.")
+        return
 
     # Process each GRIB2 file
     for filename in pgb_list:
@@ -216,12 +217,18 @@ def process_grib_files(download_dir, database, table, cfs_run, mask_lat, mask_lo
                 # Insert precipitation data into the database
                 add_cfs_to_db(database, table, cfs_run, forecast_year, forecast_month, lake, surface_type, 'precipitation', pcp_mm.item())
 
-        except KeyError as e:
-            print(f"ERROR processing precipitation data: {e}")
+        except Exception as e:
+            print(f"ERROR processing precipitation data. Skipping forecast.")
+            continue # Try the flux file
         
         ## 2 m Temperature ##
+        flx_file = os.path.join(download_dir, f"flxf.01.{cfs_run}.{forecast}.avrg.grib.grb2")
+
+        if not os.path.exists(flx_file):
+            print(f"ERROR: FLX file {flx_file} not found. Skipping forecast.")
+            return
+        
         try:
-            flx_file = os.path.join(download_dir, f"flxf.01.{cfs_run}.{forecast}.avrg.grib.grb2")
             flx_2mabove = cfgrib.open_dataset(flx_file, engine='cfgrib', filter_by_keys={'typeOfLevel': 'heightAboveGround', 'level': 2}, decode_timedelta=False)
             try:
                 mean2t = flx_2mabove['mean2t']
@@ -250,8 +257,9 @@ def process_grib_files(download_dir, database, table, cfs_run, mask_lat, mask_lo
                 # Insert air temperature data into the database
                 add_cfs_to_db(database, table, cfs_run, forecast_year, forecast_month, lake, surface_type, 'air_temperature', tmp_avg.item())
 
-        except KeyError as e:
-            print(f"ERROR processing temperature data: {e}")
+        except Exception as e:
+            print(f"ERROR processing temperature data. Skipping forecast.")
+            return
 
         ## Evaporation ##
         try:
@@ -287,11 +295,13 @@ def process_grib_files(download_dir, database, table, cfs_run, mask_lat, mask_lo
                 # Insert evaporation data into the database
                 add_cfs_to_db(database, table, cfs_run, forecast_year, forecast_month, lake, surface_type, 'evaporation', evap_mm.item())
 
-        except KeyError as e:
-            print(f"ERROR processing evaporation data: {e}")
+        except Exception as e:
+            print(f"ERROR processing evaporation data. Skipping forecast.")
+            return
 
         except FileNotFoundError:
-            print(f"ERROR: The flx file corresponding to {pgb_file} does not exist. Please check the dataset and try again.")
+            print(f"ERROR: The flx file corresponding to {pgb_file} does not exist. Skipping forecast.")
+            return
 
 def predict_cnbs(X, x_scaler, y_scaler, models_info, model_name):
     """
