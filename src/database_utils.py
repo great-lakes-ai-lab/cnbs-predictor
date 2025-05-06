@@ -131,14 +131,14 @@ def open_cfs_db(database):
 
         # Create the forecast_data table if it doesn't exist
         cursor.execute('''
-        CREATE TABLE IF NOT EXISTS forecast_data (
+        CREATE TABLE IF NOT EXISTS cfs_forecast_data (
             cfs_run INTEGER,
             year INTEGER,
             month INTEGER,
             lake TEXT,
             surface_type TEXT,
             component TEXT,
-            value [mm] REAL,
+            "value [mm]" REAL,
             PRIMARY KEY (cfs_run, year, month, lake, surface_type, component)
         )
         ''')
