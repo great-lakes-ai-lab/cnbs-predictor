@@ -114,7 +114,7 @@ We welcome contributions to cnbs-predictor! Please start a discussion with the m
 5. Push your branch to your fork.
 6. Submit a pull request to the main repository.
 
-For detailed contributing instructions, please refer to the [Contributing guidelines](CONTRIBUTING.md).
+For detailed contributing instructions, please refer to the [Contributing guidelines](CONTRIBUTING.md). For a summary of current development plans to help map out possible contributions, see our [Roadmap document](ROADMAP.md).
 
 ## Code of Conduct
 
