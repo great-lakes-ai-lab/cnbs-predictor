@@ -118,8 +118,8 @@ For detailed contributing instructions, please refer to the [Contributing guidel
 
 ## Code of Conduct
 
-This project adheres to a Code of Conduct. By participating, you agree to follow this code and foster a welcoming and respectful community.
+This project adheres to a [Code of Conduct](CODE_OF_CONDUCT.md). By participating, you agree to follow this code and foster a welcoming and respectful community.
 
 ## License
 
-This project is licensed under the GNU Affero General Public License Version 3.0.
+This project is licensed under the [GNU Affero General Public License Version 3.0](LICENSE).
