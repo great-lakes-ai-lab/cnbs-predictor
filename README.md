@@ -1,4 +1,9 @@
 # cnbs-predictor
+![License](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)
+![Version](https://img.shields.io/github/release/great-lakes-ai-lab/REPOSITORY.svg)
+![Contributors](https://img.shields.io/github/contributors/great-lakes-ai-lab/cnbs-predictor)
+![Issues](https://img.shields.io/github/issues/great-lakes-ai-lab/cnbs-predictor)
+![Pull Requests](https://img.shields.io/github/issues-pr/great-lakes-ai-lab/cnbs-predictor)
 
 <p align="center">
   <img src="assets/logo.png" alt="Logo" width="150"/>
