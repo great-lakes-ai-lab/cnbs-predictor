@@ -6,7 +6,7 @@
 ![Pull Requests](https://img.shields.io/github/issues-pr/great-lakes-ai-lab/cnbs-predictor)
 
 <p align="center">
-  <img src="assets/logo.png" alt="Logo" width="150"/>
+  <img src="assets/logo.png" alt="cnbs-logo" width="150"/>
 </p>
 
 ## Overview
@@ -128,3 +128,15 @@ This project adheres to a [Code of Conduct](CODE_OF_CONDUCT.md). By participatin
 ## License
 
 This project is licensed under the [GNU Affero General Public License Version 3.0](LICENSE).
+
+## Acknowledgements
+
+`cnbs-predictor` is powered by institutional collaboration from:
+
+<img src="assets/great-lakes-ai-lab-logo.png" alt="Great Lakes AI Lab Logo" height="100" style="padding-right: 10px;">
+<img src="assets/ciglr-logo.png" alt="Cooperative Institute for Great Lakes Research (CIGLR) Logo" height="100" style="padding-right: 10px;">
+<img src="assets/noaa-glerl-logo.png" alt="NOAA Great Lakes Environmental Research Lab (GLERL) Logo" height="100" style="padding-right: 10px;">
+<img src="assets/u-m-logo.png" alt="University of Michigan Logo" height="100" style="padding-right: 10px;">
+<img src="assets/usace-logo.png" alt="US Army Corps of Engineers Logo" height="100" style="padding-right: 10px;">
+
+Funding for this project provided by NOAA
