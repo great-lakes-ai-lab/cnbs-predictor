@@ -48,7 +48,7 @@ Before you begin, make sure that the following are installed on your system:
     cnbs-predictor
     ```
 
-2. **Set Up the Conda Environment**: Create and activate the Conda environment. (NOTE: THIS MAY BE DIFFERENT FOR TRAINING VS. PREDICTION) 
+2. **Set Up the Conda Environment**: Create and activate the Conda environment. 
 
     ```bash
     conda env create -f requirements/environment.yml
@@ -110,7 +110,7 @@ cnbs-predictor/
 ```
 
 ## Contributing
-We welcome contributions to cnbs-predictor! Please start a discussion with the maintainers first, either in the GitHub Discussions area of this repository or via email. Once you have discussed possible changes with the developers:
+We welcome contributions to cnbs-predictor! Please start a discussion with the maintainers first (@lefitzpatrick, @danijonesocean), preferably in the GitHub Discussions or Issues sections of this repository. Once you have discussed possible changes with the developers:
 
 1. Fork the repository.
 2. Clone your fork to your target machine.
