@@ -348,17 +348,13 @@ def predict_cnbs(X, x_scaler, y_scaler, models_info, model_name):
     y_pred = y_scaler.inverse_transform(y_pred_scaled)
 
     # Define column names for the predictions
-    column_names = ['superior_evaporation', 'superior_precipitation', 'superior_runoff',
-                    'erie_evaporation', 'erie_precipitation', 'erie_runoff',
-                    'ontario_evaporation', 'ontario_precipitation', 'ontario_runoff',
-                    'michigan-huron_evaporation', 'michigan-huron_precipitation', 'michigan-huron_runoff']
+    column_names = ['superior_evaporation', 'superior_precipitation', 'superior_runoff', 'superior_cnbs',
+                    'erie_evaporation', 'erie_precipitation', 'erie_runoff', 'erie_cnbs',
+                    'ontario_evaporation', 'ontario_precipitation', 'ontario_runoff', 'ontario_cnbs',
+                    'michigan-huron_evaporation', 'michigan-huron_precipitation', 'michigan-huron_runoff', 'michigan-huron_cnbs']
     
     # Create DataFrame from predictions and reset index
     df = pd.DataFrame(y_pred, columns=column_names, index=X.index)
-
-    # Calculate CNBS for all the lakes
-    for lake in ['superior', 'erie', 'ontario', 'michigan-huron']:
-        df[f'{lake}_cnbs'] = df[f'{lake}_precipitation'] + df[f'{lake}_runoff'] - df[f'{lake}_evaporation']
 
     return df
 
@@ -439,7 +435,7 @@ def add_df_to_db(database, table, df):
         conn = sqlite3.connect(database)
         
         # Send the DataFrame to the database
-        df.to_sql(table, conn, if_exists='append', index=False)  # if_exists='append' will add data without replacing
+        df.to_sql(table, conn, if_exists='append', index=True)
 
         # Commit and close the connection
         conn.commit()
