@@ -137,6 +137,6 @@ This project is licensed under the [GNU Affero General Public License Version 3.
 <img src="assets/ciglr-logo.png" alt="Cooperative Institute for Great Lakes Research (CIGLR) Logo" height="100" style="padding-right: 10px;">
 <img src="assets/noaa-glerl-logo.png" alt="NOAA Great Lakes Environmental Research Lab (GLERL) Logo" height="100" style="padding-right: 10px;">
 <img src="assets/um-horizontal.png" alt="University of Michigan Logo" width="500" style="padding-right: 10px;">
-<img src="assets/usace-logo.png" alt="US Army Corps of Engineers Logo" height="100" style="padding-right: 10px;">
+<img src="assets/usace.png" alt="US Army Corps of Engineers Logo" width="500" style="padding-right: 10px;">
 
 Funding for this project provided by NOAA
