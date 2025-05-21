@@ -231,10 +231,10 @@ def process_grib_files(download_dir, database, table, cfs_run, mask_lat, mask_lo
         try:
             flx_2mabove = cfgrib.open_dataset(flx_file, engine='cfgrib', filter_by_keys={'typeOfLevel': 'heightAboveGround', 'level': 2}, decode_timedelta=False)
             try:
-                mean2t = flx_2mabove['mean2t']
-            except KeyError:
-                print("'mean2t' not found in flux file, trying 'avg_2t'.")
                 mean2t = flx_2mabove['avg_2t']
+            except KeyError:
+                print("'avg_2t' not found in flux file, trying 'mean2t'.")
+                mean2t = flx_2mabove['mean2t']
 
             # Cut the variable to the mask domain
             mean2t_cut = mean2t.sel(
@@ -265,10 +265,10 @@ def process_grib_files(download_dir, database, table, cfs_run, mask_lat, mask_lo
         try:
             flx_surface = cfgrib.open_dataset(flx_file, engine='cfgrib', filter_by_keys={'typeOfLevel': 'surface'}, decode_timedelta=False)
             try:
-                mslhf = flx_surface['mslhf']
-            except KeyError:
-                print("'mslhf' not found in flux file, trying 'avg_slhtf'.")
                 mslhf = flx_surface['avg_slhtf']
+            except KeyError:
+                print("'avg_slhtf' not found in flux file, trying 'mslhf'.")
+                mslhf = flx_surface['mslhf']
 
             # Cut the variable to the mask domain
             mslhf_cut = mslhf.sel(
@@ -348,17 +348,13 @@ def predict_cnbs(X, x_scaler, y_scaler, models_info, model_name):
     y_pred = y_scaler.inverse_transform(y_pred_scaled)
 
     # Define column names for the predictions
-    column_names = ['superior_evaporation', 'superior_precipitation', 'superior_runoff',
-                    'erie_evaporation', 'erie_precipitation', 'erie_runoff',
-                    'ontario_evaporation', 'ontario_precipitation', 'ontario_runoff',
-                    'michigan-huron_evaporation', 'michigan-huron_precipitation', 'michigan-huron_runoff']
+    column_names = ['superior_evaporation', 'superior_precipitation', 'superior_runoff', 'superior_cnbs',
+                    'erie_evaporation', 'erie_precipitation', 'erie_runoff', 'erie_cnbs',
+                    'ontario_evaporation', 'ontario_precipitation', 'ontario_runoff', 'ontario_cnbs',
+                    'michigan-huron_evaporation', 'michigan-huron_precipitation', 'michigan-huron_runoff', 'michigan-huron_cnbs']
     
     # Create DataFrame from predictions and reset index
     df = pd.DataFrame(y_pred, columns=column_names, index=X.index)
-
-    # Calculate CNBS for all the lakes
-    for lake in ['superior', 'erie', 'ontario', 'michigan-huron']:
-        df[f'{lake}_cnbs'] = df[f'{lake}_precipitation'] + df[f'{lake}_runoff'] - df[f'{lake}_evaporation']
 
     return df
 
@@ -439,7 +435,7 @@ def add_df_to_db(database, table, df):
         conn = sqlite3.connect(database)
         
         # Send the DataFrame to the database
-        df.to_sql(table, conn, if_exists='append', index=False)  # if_exists='append' will add data without replacing
+        df.to_sql(table, conn, if_exists='append', index=True)
 
         # Commit and close the connection
         conn.commit()
