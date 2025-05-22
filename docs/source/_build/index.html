@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+
+<html lang="en" data-content_root="./">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <title>cnbs-predictor Documentation &#8212; cnbs-predictor  documentation</title>
+    <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=5ecbeea2" />
+    <link rel="stylesheet" type="text/css" href="_static/basic.css?v=b08954a9" />
+    <link rel="stylesheet" type="text/css" href="_static/alabaster.css?v=27fed22d" />
+    <script src="_static/documentation_options.js?v=5929fcd5"></script>
+    <script src="_static/doctools.js?v=9bcbadda"></script>
+    <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+   
+  <link rel="stylesheet" href="_static/custom.css" type="text/css" />
+  
+
+  
+  
+
+  </head><body>
+  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          
+
+          <div class="body" role="main">
+            
+  <section id="cnbs-predictor-documentation">
+<h1>cnbs-predictor Documentation<a class="headerlink" href="#cnbs-predictor-documentation" title="Link to this heading">¶</a></h1>
+<p>Welcome to the documentation for <strong>cnbs-predictor</strong>! This software package is designed to forecast key components of Net Basin Supply (NBS) for the Laurentian Great Lakes using NOAA’s Climate Forecast System (CFS) data. The repository includes features like advanced predictive algorithms, real-time data processing, and easy-to-use Jupyter notebooks for forecasting precipitation, evaporation, and runoff.</p>
+<div class="toctree-wrapper compound">
+</div>
+<section id="installation">
+<h2>Installation<a class="headerlink" href="#installation" title="Link to this heading">¶</a></h2>
+<p>Follow the steps below to set up the cnbs-predictor package.</p>
+<ol class="arabic simple">
+<li><p><strong>Clone the repository:</strong>
+<code class="docutils literal notranslate"><span class="pre">`bash</span>
+<span class="pre">git</span> <span class="pre">clone</span> <span class="pre">https://github.com/great-lakes-ai-lab/cnbs-predictor.git</span>
+<span class="pre">`</span></code></p></li>
+<li><p><strong>Set up the Conda environment:</strong>
+<code class="docutils literal notranslate"><span class="pre">`bash</span>
+<span class="pre">conda</span> <span class="pre">env</span> <span class="pre">create</span> <span class="pre">-f</span> <span class="pre">requirements/environment.yml</span>
+<span class="pre">conda</span> <span class="pre">activate</span> <span class="pre">cnbs-predictor-env</span>
+<span class="pre">`</span></code></p></li>
+<li><p><strong>Set up Jupyter Kernel:</strong>
+<code class="docutils literal notranslate"><span class="pre">`bash</span>
+<span class="pre">python</span> <span class="pre">-m</span> <span class="pre">ipykernel</span> <span class="pre">install</span> <span class="pre">--user</span> <span class="pre">--name</span> <span class="pre">cnbs-predictor-env</span> <span class="pre">--display-name</span> <span class="pre">&quot;Python</span> <span class="pre">(cnbs-predictor-env)&quot;</span>
+<span class="pre">`</span></code></p></li>
+<li><p><strong>Launch Jupyter Lab:</strong>
+<code class="docutils literal notranslate"><span class="pre">`bash</span>
+<span class="pre">jupyter</span> <span class="pre">lab</span>
+<span class="pre">`</span></code></p></li>
+</ol>
+</section>
+<section id="api-reference">
+<h2>API Reference<a class="headerlink" href="#api-reference" title="Link to this heading">¶</a></h2>
+<p>The following sections document the key modules and their functions. All classes and functions in these modules are automatically documented using their docstrings.</p>
+<dl class="py function" id="module-src.data_processing">
+<dt class="sig sig-object py" id="src.data_processing.add_cfs_to_db">
+<span class="sig-prename descclassname"><span class="pre">src.data_processing.</span></span><span class="sig-name descname"><span class="pre">add_cfs_to_db</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">database</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">table</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">cfs_run</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">year</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">month</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">lake</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">surface_type</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">component</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">value</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#src.data_processing.add_cfs_to_db" title="Link to this definition">¶</a></dt>
+<dd><p>Adds a record to the specified database table using SQLite, inserting or replacing based on primary key.</p>
+<p>Parameters:
+database (str): Path to the database file.
+table (str): Name of the table where the data should be inserted.
+cfs_run (str): The CFS run identifier.
+year (int): Forecast year (2024, 2025, etc.).
+month (int): Forecast month (should be between 1 and 12).
+lake (str): The lake related to the data.
+surface_type (str): Surface type over ‘lake’ or ‘land’.
+component (str): NBS Component (‘precipitation’, ‘evaporation’, ‘runoff’, or ‘cnbs’).
+value (float): The value in millimeters [mm].</p>
+<p>Raises:
+ValueError: If year is not an integer, month is not between 1 and 12, or any other input is invalid.
+sqlite3.DatabaseError: If there is an error interacting with the database.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="src.data_processing.add_df_to_db">
+<span class="sig-prename descclassname"><span class="pre">src.data_processing.</span></span><span class="sig-name descname"><span class="pre">add_df_to_db</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">database</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">table</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">df</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#src.data_processing.add_df_to_db" title="Link to this definition">¶</a></dt>
+<dd><p>Adds a DataFrame to a specified table in an database using SQLite .</p>
+<p>Parameters:
+database (str): The path to the SQLite database file.
+table (str): The name of the table to which data should be added.
+df (pd.DataFrame): The DataFrame containing the data to be inserted into the table.</p>
+<p>Returns:
+None</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="src.data_processing.create_directory">
+<span class="sig-prename descclassname"><span class="pre">src.data_processing.</span></span><span class="sig-name descname"><span class="pre">create_directory</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">directory</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#src.data_processing.create_directory" title="Link to this definition">¶</a></dt>
+<dd><p>Create a directory if it doesn’t already exist.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="src.data_processing.filter_predictions">
+<span class="sig-prename descclassname"><span class="pre">src.data_processing.</span></span><span class="sig-name descname"><span class="pre">filter_predictions</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">df</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#src.data_processing.filter_predictions" title="Link to this definition">¶</a></dt>
+<dd><p>Filters the predictions DataFrame based on the current date. If the current day is greater than or equal to the 26th,
+the function will remove the current and previous months’ forecasts. Otherwise, it will keep the current month’s forecast
+and all future months. This was a request by USACE.</p>
+<p>Parameters:
+df (pd.DataFrame): The predictions DataFrame, with a MultiIndex containing ‘year’ and ‘month’.</p>
+<p>Returns:
+pd.DataFrame: The filtered DataFrame, with data only for future months or the appropriate forecast month.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="src.data_processing.get_files">
+<span class="sig-prename descclassname"><span class="pre">src.data_processing.</span></span><span class="sig-name descname"><span class="pre">get_files</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">directory</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">affix</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">identifier</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#src.data_processing.get_files" title="Link to this definition">¶</a></dt>
+<dd><p>Get a list of all files in the specified directory that match the given prefix or suffix.</p>
+<p>Parameters:
+- directory (str): Path to the directory containing files.
+- affix (str): Either ‘prefix’ (for files starting with the identifier) or ‘suffix’ (for files ending with the identifier).
+- identifier (str): The prefix or suffix to match (e.g., ‘pgb’, ‘flx’, ‘.grb2’, or ‘.nc’).</p>
+<p>Returns:
+- List of file paths that match the specified prefix or suffix.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="src.data_processing.predict_cnbs">
+<span class="sig-prename descclassname"><span class="pre">src.data_processing.</span></span><span class="sig-name descname"><span class="pre">predict_cnbs</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">X</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">x_scaler</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">y_scaler</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">models_info</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">model_name</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#src.data_processing.predict_cnbs" title="Link to this definition">¶</a></dt>
+<dd><p>Predicts Components of Net Basin Supply for the lakes.</p>
+<p>Parameters:
+X (pd.DataFrame): The input data to predict the CNBS values. It should be a DataFrame.
+x_scaler (str): The file path to the scaler used for the input data.
+y_scaler (str): The file path to the scaler used for the target data.
+models_info (list): A list of dictionaries containing model information.
+model_name (str): The name of the model to be used for prediction.</p>
+<p>Returns:
+pd.DataFrame: A DataFrame containing the predicted CNBS values for each lake.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="src.data_processing.process_grib_files">
+<span class="sig-prename descclassname"><span class="pre">src.data_processing.</span></span><span class="sig-name descname"><span class="pre">process_grib_files</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">download_dir</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">database</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">table</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">cfs_run</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">mask_lat</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">mask_lon</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">mask_ds</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">mask_variables</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">area</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#src.data_processing.process_grib_files" title="Link to this definition">¶</a></dt>
+<dd><p>Processes GRIB files for a given CFS run, extracting precipitation, temperature, and evaporation data,
+then inserts the processed data into a SQLite database.</p>
+<p>Parameters:
+download_dir (str): The directory where GRIB files are stored.
+database (str): Path to the SQLite database.
+table (str): The table where the data will be inserted.
+cfs_run (str): The CFS run identifier.
+mask_lat (array): Latitude values for the domain.
+mask_lon (array): Longitude values for the domain.
+mask_ds (array): A dataset containing mask variables.
+mask_variables (list): A list of mask variables to process.
+area (array): Area values corresponding to the grid.</p>
+<p>Raises:
+ValueError: If any of the input parameters are invalid.
+FileNotFoundError: If a required GRIB file cannot be found.
+sqlite3.DatabaseError: If there is an error interacting with the database.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="src.data_processing.shift_variables">
+<span class="sig-prename descclassname"><span class="pre">src.data_processing.</span></span><span class="sig-name descname"><span class="pre">shift_variables</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">df</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">lag</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">lead</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#src.data_processing.shift_variables" title="Link to this definition">¶</a></dt>
+<dd><p>Create the variables columns to include lags (last month values) and lead variables</p>
+<p>Parameters:
+- df (pd.DataFrame): The DataFrame containing the time series data.
+- lag (int): The number of months you want to include lagged variables. Default = 0
+- lead (int): The number of months for the advance variables. Default = 0</p>
+<p>Returns:
+- pd.DataFrame: The DataFrame with added variable columns for lags and leading.</p>
+</dd></dl>
+
+<dl class="py function" id="module-src.database_utils">
+<dt class="sig sig-object py" id="src.database_utils.check_url_exists">
+<span class="sig-prename descclassname"><span class="pre">src.database_utils.</span></span><span class="sig-name descname"><span class="pre">check_url_exists</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">url</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#src.database_utils.check_url_exists" title="Link to this definition">¶</a></dt>
+<dd><p>Check if a URL exists by sending a HEAD request.</p>
+<p>Parameters:
+- url (str): The URL to check.</p>
+<p>Returns:
+- bool: True if the URL returns a status code 200 (OK), False otherwise.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="src.database_utils.download_grb2_aws">
+<span class="sig-prename descclassname"><span class="pre">src.database_utils.</span></span><span class="sig-name descname"><span class="pre">download_grb2_aws</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">product</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">bucket_name</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">url_path</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">download_dir</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#src.database_utils.download_grb2_aws" title="Link to this definition">¶</a></dt>
+<dd><p>Download the CFS forecast from AWS</p>
+<p>Parameters:
+- product: ‘flx’ or ‘pgb’
+- bucket_name: for CFS data it is ‘noaa-cfs-pds’
+- url_path: the url path to data
+- download_dir: location to download data to</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="src.database_utils.download_grb2_ncei">
+<span class="sig-prename descclassname"><span class="pre">src.database_utils.</span></span><span class="sig-name descname"><span class="pre">download_grb2_ncei</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">product</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">url_path</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">download_dir</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#src.database_utils.download_grb2_ncei" title="Link to this definition">¶</a></dt>
+<dd><p>Downloads GRB2 CFS forecast files from the National Centers for Environmental Information (NCEI).</p>
+<p>Parameters:
+product (str): The product type (e.g., ‘pgbf’, ‘flxf’) used to filter GRB2 files.
+url_path (str): The URL path to the NCEI directory containing the GRB2 files.
+download_dir (str): The local directory where the files should be downloaded.</p>
+<p>Returns:
+None</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="src.database_utils.get_next_cfs_run">
+<span class="sig-prename descclassname"><span class="pre">src.database_utils.</span></span><span class="sig-name descname"><span class="pre">get_next_cfs_run</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">database</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">table</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#src.database_utils.get_next_cfs_run" title="Link to this definition">¶</a></dt>
+<dd><p>Retrieves the next CFS run timestamp from the database table based on the last entry.
+The function calculates the next forecast run time, which is incremented by 6 hours.</p>
+<p>Parameters:
+- database (str): Path to the SQLite database file.
+- table (str): Name of the table containing the CFS run data.</p>
+<p>Returns:
+- next_cfs_run (str): The next CFS run time in MM-DD-YYYY HH format, or None if an error occurs.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="src.database_utils.open_cfs_db">
+<span class="sig-prename descclassname"><span class="pre">src.database_utils.</span></span><span class="sig-name descname"><span class="pre">open_cfs_db</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">database</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#src.database_utils.open_cfs_db" title="Link to this definition">¶</a></dt>
+<dd><p>Opens a connection to the database. If the database does not exist, it creates a new one.
+It also creates a table <cite>forecast_data</cite> if it does not already exist.</p>
+<p>Parameters:
+- database (str): The path to the SQLite database file.</p>
+<p>Returns:
+- conn (sqlite3.Connection): The connection object to the database.
+- cursor (sqlite3.Cursor): The cursor object to execute SQL commands.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="src.database_utils.pull_from_db">
+<span class="sig-prename descclassname"><span class="pre">src.database_utils.</span></span><span class="sig-name descname"><span class="pre">pull_from_db</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">database</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">table</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">cfs_run</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">year</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">month</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">lake</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">surface_type</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">component</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#src.database_utils.pull_from_db" title="Link to this definition">¶</a></dt>
+<dd><p>Pulls a value from the database based on specific query parameters.</p>
+<p>Parameters:
+- database (str): Path to database.
+- table (str): Table name from which to fetch the data.
+- cfs_run (int): The forecast run identifier.
+- year (int): The forecast year.
+- month (int): The forecast month.
+- lake (str): The lake name.
+- surface_type (str): The type of surface (‘land’ or ‘lake’).
+- component (str): The CNBS type (e.g., ‘precipitation’, ‘evaporation’).</p>
+<p>Returns:
+- value [mm] (float or None): The value for the specified query parameters, or None if not found or an error occurs.</p>
+</dd></dl>
+
+<dl class="py function" id="module-src.hydro_utils">
+<dt class="sig sig-object py" id="src.hydro_utils.calculate_evaporation">
+<span class="sig-prename descclassname"><span class="pre">src.hydro_utils.</span></span><span class="sig-name descname"><span class="pre">calculate_evaporation</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">temperature_K</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">latent_heat</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#src.hydro_utils.calculate_evaporation" title="Link to this definition">¶</a></dt>
+<dd><p>Calculate the evaporation rate based on temperature and latent heat.</p>
+<p>Parameters:
+temperature_K (float or array-like): Temperature in Kelvin.
+latent_heat (float or array-like): Latent heat in W/m².</p>
+<p>Returns:
+float or numpy.ndarray: The evaporation rate in kg/m²/s.</p>
+<p>Raises:
+ValueError: If temperature_K is less than 0 or latent_heat is negative.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="src.hydro_utils.calculate_grid_cell_areas">
+<span class="sig-prename descclassname"><span class="pre">src.hydro_utils.</span></span><span class="sig-name descname"><span class="pre">calculate_grid_cell_areas</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">lon</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">lat</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#src.hydro_utils.calculate_grid_cell_areas" title="Link to this definition">¶</a></dt>
+<dd><p>Calculate the area of each grid cell given latitude and longitude arrays.</p>
+<p>Parameters:
+lon (array-like): 1D array of longitudes in degrees.
+lat (array-like): 1D array of latitudes in degrees.</p>
+<p>Returns:
+numpy.ndarray: A 2D array of grid cell areas in square meters.</p>
+<p>Raises:
+ValueError: If lat or lon are not 1D arrays.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="src.hydro_utils.convert_mm_to_cms">
+<span class="sig-prename descclassname"><span class="pre">src.hydro_utils.</span></span><span class="sig-name descname"><span class="pre">convert_mm_to_cms</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">df</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#src.hydro_utils.convert_mm_to_cms" title="Link to this definition">¶</a></dt>
+<dd><p>Converts the ‘value [mm]’ in the dataframe to ‘value [cms]’ (cubic meters per second) based on lake surface area and the number of seconds in the month.</p>
+<p>Args:
+- df (pd.DataFrame): DataFrame containing the columns ‘value [mm]’, ‘lake’, and a multi-index with ‘month’ and ‘year’.</p>
+<p>Returns:
+- pd.DataFrame: DataFrame with a new column ‘value [cms]’ representing the value in cubic meters per second.</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="src.hydro_utils.seconds_in_month">
+<span class="sig-prename descclassname"><span class="pre">src.hydro_utils.</span></span><span class="sig-name descname"><span class="pre">seconds_in_month</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">year</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">month</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#src.hydro_utils.seconds_in_month" title="Link to this definition">¶</a></dt>
+<dd><p>Calculate the number of seconds in a given month of a specific year.</p>
+<p>Parameters:
+year (int): The year for which the month is being calculated.
+month (int): The month for which the number of seconds is being calculated (1-12).</p>
+<p>Returns:
+int: The number of seconds in the specified month.</p>
+<p>Raises:
+ValueError: If the month is not between 1 and 12.</p>
+</dd></dl>
+
+</section>
+<section id="usage">
+<h2>Usage<a class="headerlink" href="#usage" title="Link to this heading">¶</a></h2>
+<p>After setting up the environment, you can use the following notebooks to generate forecasts for NBS components:</p>
+<ol class="arabic simple">
+<li><p><strong>Forecast Model Training</strong>: Not needed for most users, but useful for model retraining.</p></li>
+<li><p><strong>Downloading and Preprocessing Input Data</strong>: Prepares NOAA CFS and LS2SWBM data.</p></li>
+<li><p><strong>Generating Forecasts</strong>: Produces NBS predictions using processed data.</p></li>
+</ol>
+</section>
+<section id="data-sources">
+<h2>Data Sources<a class="headerlink" href="#data-sources" title="Link to this heading">¶</a></h2>
+<p>The package utilizes data from NOAA’s Climate Forecast System (CFS) and the Large Lake Statistical Water Balance Model (LS2SWBM). Detailed instructions on downloading and preprocessing these datasets are available in the notebooks.</p>
+<table class="docutils align-center" id="id1">
+<caption><span class="caption-text">Data Sources</span><a class="headerlink" href="#id1" title="Link to this table">¶</a></caption>
+<colgroup>
+<col style="width: 11.1%" />
+<col style="width: 55.6%" />
+<col style="width: 33.3%" />
+</colgroup>
+<thead>
+<tr class="row-odd"><th class="head"><p>Abbreviation</p></th>
+<th class="head"><p>Name</p></th>
+<th class="head"><p>Source</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>CFS</p></td>
+<td><p>Climate Forecast System v2</p></td>
+<td><p>NOAA</p></td>
+</tr>
+<tr class="row-odd"><td><p>LS2SWBM</p></td>
+<td><p>Large Lake Statistical Water Balance Model</p></td>
+<td><p>NOAA GLERL</p></td>
+</tr>
+</tbody>
+</table>
+</section>
+<section id="contributing">
+<h2>Contributing<a class="headerlink" href="#contributing" title="Link to this heading">¶</a></h2>
+<p>We welcome contributions! To contribute, fork the repository and follow these steps:</p>
+<ol class="arabic simple">
+<li><p>Fork the repository on GitHub.</p></li>
+<li><p>Clone your fork locally.</p></li>
+<li><p>Create a feature branch.</p></li>
+<li><p>Make your changes and commit.</p></li>
+<li><p>Push your changes to your fork.</p></li>
+<li><p>Submit a pull request to the main repository.</p></li>
+</ol>
+<p>For more details, check out the [Contributing guidelines](CONTRIBUTING.md) and the [Roadmap document](ROADMAP.md).</p>
+</section>
+<section id="license">
+<h2>License<a class="headerlink" href="#license" title="Link to this heading">¶</a></h2>
+<p>This project is licensed under the [AGPL-3.0 License](LICENSE).</p>
+</section>
+<section id="acknowledgements">
+<h2>Acknowledgements<a class="headerlink" href="#acknowledgements" title="Link to this heading">¶</a></h2>
+<p>This project is powered by institutional collaboration from:</p>
+<ul class="simple">
+<li><p>![Great Lakes AI Lab](assets/great-lakes-ai-lab-logo.png)</p></li>
+<li><p>![CIGLR](assets/CIGLR_LOGO.png)</p></li>
+<li><p>![NOAA GLERL](assets/noaa-glerl-logo.png)</p></li>
+<li><p>![University of Michigan](assets/um-horizontal.png)</p></li>
+<li><p>![US Army Corps of Engineers](assets/usace.png)</p></li>
+</ul>
+<p>Funding provided by NOAA.</p>
+</section>
+</section>
+
+
+          </div>
+          
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="Main">
+        <div class="sphinxsidebarwrapper">
+<h1 class="logo"><a href="#">cnbs-predictor</a></h1>
+
+
+
+
+
+
+
+
+
+<search id="searchbox" style="display: none" role="search">
+    <div class="searchformwrapper">
+    <form class="search" action="search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Search"/>
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</search>
+<script>document.getElementById('searchbox').style.display = "block"</script><h3>Navigation</h3>
+
+<div class="relations">
+<h3>Related Topics</h3>
+<ul>
+  <li><a href="#">Documentation overview</a><ul>
+  </ul></li>
+</ul>
+</div>
+
+
+
+
+
+
+
+
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="footer">
+      &#169;2025, Lindsay Fitzpatrick, Dani Jones.
+      
+      |
+      Powered by <a href="https://www.sphinx-doc.org/">Sphinx 8.2.3</a>
+      &amp; <a href="https://alabaster.readthedocs.io">Alabaster 1.0.0</a>
+      
+      |
+      <a href="_sources/index.rst.txt"
+          rel="nofollow">Page source</a>
+    </div>
+
+    
+
+    
+  </body>
+</html>
