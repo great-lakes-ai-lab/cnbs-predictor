@@ -349,9 +349,9 @@ def predict_cnbs(X, x_scaler, y_scaler, models_info, model_name):
 
     # Define column names for the predictions
     column_names = ['superior_evaporation', 'superior_precipitation', 'superior_runoff', 'superior_cnbs',
+                    'michigan-huron_evaporation', 'michigan-huron_precipitation', 'michigan-huron_runoff', 'michigan-huron_cnbs',
                     'erie_evaporation', 'erie_precipitation', 'erie_runoff', 'erie_cnbs',
-                    'ontario_evaporation', 'ontario_precipitation', 'ontario_runoff', 'ontario_cnbs',
-                    'michigan-huron_evaporation', 'michigan-huron_precipitation', 'michigan-huron_runoff', 'michigan-huron_cnbs']
+                    'ontario_evaporation', 'ontario_precipitation', 'ontario_runoff', 'ontario_cnbs']
     
     # Create DataFrame from predictions and reset index
     df = pd.DataFrame(y_pred, columns=column_names, index=X.index)
