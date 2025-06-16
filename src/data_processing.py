@@ -348,10 +348,10 @@ def predict_cnbs(X, x_scaler, y_scaler, models_info, model_name):
     y_pred = y_scaler.inverse_transform(y_pred_scaled)
 
     # Define column names for the predictions
-    column_names = ['superior_evaporation', 'superior_precipitation', 'superior_runoff', 'superior_cnbs',
-                    'michigan-huron_evaporation', 'michigan-huron_precipitation', 'michigan-huron_runoff', 'michigan-huron_cnbs',
-                    'erie_evaporation', 'erie_precipitation', 'erie_runoff', 'erie_cnbs',
-                    'ontario_evaporation', 'ontario_precipitation', 'ontario_runoff', 'ontario_cnbs']
+    column_names = ['superior_evaporation', 'superior_precipitation', 'superior_runoff', 'superior_nbs',
+                    'michigan-huron_evaporation', 'michigan-huron_precipitation', 'michigan-huron_runoff', 'michigan-huron_nbs',
+                    'erie_evaporation', 'erie_precipitation', 'erie_runoff', 'erie_nbs',
+                    'ontario_evaporation', 'ontario_precipitation', 'ontario_runoff', 'ontario_nbs']
     
     # Create DataFrame from predictions and reset index
     df = pd.DataFrame(y_pred, columns=column_names, index=X.index)
