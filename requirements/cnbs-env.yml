@@ -1,0 +1,55 @@
+name: cnbs_env
+channels:
+  - defaults
+  - conda-forge
+dependencies:
+  - bs4
+  - cfgrib=0.9.15.0
+  - conda
+  - eccodes
+  - h5py
+  - hdf4
+  - hdf5
+  - jasper
+  - mysql
+  - nbformat
+  - openjpeg
+  - pip
+  - prompt-toolkit
+  - properscoring
+  - requests
+  - requests-toolbelt
+  - python=3.12.3
+  - readline
+  - setuptools
+  - xarray
+  - referencing
+  - sqlite
+  - zlib
+  - pip:
+      - beautifulsoup4
+      - boto3
+      - botocore
+      - importlib-metadata
+      - ipykernel
+      - ipython
+      - joblib
+      - jupyter_client
+      - jupyter_core
+      - keras
+      - markdown
+      - matplotlib
+      - netcdf4
+      - numpy
+      - pandas
+      - plotly
+      - ply
+      - scikit-learn
+      - scipy
+      - setuptools
+      - tabulate
+      - urllib3
+      - tensorboard
+      - tensorboard-data-server
+      - tensorflow
+prefix: /opt/anaconda3
