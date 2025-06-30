@@ -51,14 +51,14 @@ Before you begin, make sure that the following are installed on your system:
 2. **Set Up the Conda Environment**: Create and activate the Conda environment. 
 
     ```bash
-    conda env create -f requirements/environment.yml
-    conda activate cnbs-predictor-env
+    conda env create -f requirements/cnbs-env.yml
+    conda activate cnbs-env
     ```
 
 3. **Set Up Jupyter Kernel**: Register the Conda environment as a Jupyter kernel.
 
     ```bash
-    python -m ipykernel install --user --name cnbs-predictor-env --display-name "Python (cnbs-predictor-env)"
+    python -m ipykernel install --user --name cnbs-env --display-name "Python (cnbs-env)"
     ```
 
 ### Usage
