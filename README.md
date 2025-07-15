@@ -63,23 +63,69 @@ Before you begin, make sure that the following are installed on your system:
 
 ### Usage
 
-#### Running Jupyter Lab
+This section guides you on how to interact with the project's Jupyter notebooks.
 
-After setting up your Conda environment, you can launch **Jupyter Lab** to work with the notebooks. 
+#### Running Jupyter Lab in a Web Browser
+
+After setting up your Conda environment, you can launch **Jupyter Lab** to work with the notebooks in your default web browser.
 
 ```bash
 jupyter lab
 ```
 
+This command will typically open Jupyter Lab in a new tab or window in your default web browser. If it doesn't open automatically, look for URLs printed in your terminal (e.g., `http://localhost:8888/lab?token=...`) and copy-paste one into your browser.
+
+**Troubleshooting Note:** If you encounter a `Jupyter command 'jupyter-lab' not found` error after activating the environment, it's likely a temporary installation issue. You can manually install it with:
+
+```bash
+conda install jupyterlab
+```
+
+Then retry `jupyter lab`.
+
+#### Running Jupyter Lab Desktop Application
+
+If you prefer to use the standalone **JupyterLab Desktop** application for a native desktop experience:
+
+1.  **Install JupyterLab Desktop:** If you haven't already, download and install the application, for example from the [official JupyterLab Desktop website](https://github.com/jupyterlab/jupyterlab-desktop/releases) or through your organization's trusted software portal.
+2.  **Open JupyterLab Desktop:** Launch the application.
+3.  **Add Conda Environment:**
+    * In the JupyterLab Desktop application, go to `File` > `Add Existing Environment...` or navigate through `Settings` > `Python Environment Manager` > `Add Existing`.
+    * You will need to point it to your `cnbs_env` Conda environment's Python executable. The typical paths are:
+        * **macOS/Linux:** `/path/to/your/miniconda3/envs/cnbs_env/bin/python`
+        * **Windows:** `C:\path\to\your\miniconda3\envs\cnbs_env\python.exe`
+        (Remember to replace `/path/to/your/miniconda3` with your actual Anaconda or Miniconda installation directory.)
+    * Give it a descriptive display name like "Python (cnbs_env)".
+4.  **Launch from Desktop:** Once `cnbs_env` is added and selected, you can navigate to your cloned `cnbs-predictor` directory within the JupyterLab Desktop interface and open the notebooks.
+
+#### Running in VS Code
+
+For a powerful integrated development environment (IDE) experience with features like variable explorers, debugging, and integrated Git, you can use **Visual Studio Code** with its Python and Jupyter extensions.
+
+1.  **Install VS Code:** If you haven't already, download and install [Visual Studio Code](https://code.visualstudio.com/).
+2.  **Install Extensions:** Open VS Code and install the recommended extensions:
+    * **Python Extension** (Publisher: Microsoft)
+    * **Jupyter Extension** (Publisher: Microsoft)
+    You can find and install extensions from the Extensions view (`Ctrl+Shift+X` or `Cmd+Shift+X`).
+3.  **Open Project Folder:** In VS Code, go to `File` > `Open Folder...` and select your cloned `cnbs-predictor` directory.
+4.  **Select Conda Environment (Kernel):**
+    * Open any `.ipynb` notebook file in VS Code (e.g., `notebooks/production/2_LEF_forecast_model.ipynb`).
+    * In the top right corner of the notebook editor, click on the **kernel picker** (it might show a Python version or "Select Kernel").
+    * From the list, select "Python Environments..." and then choose the `cnbs_env` Conda environment. VS Code typically auto-detects your Conda environments.
+    * Alternatively, you can open the Command Palette (`Ctrl+Shift+P` or `Cmd+Shift+P`), type "Python: Select Interpreter", and choose your `cnbs_env` Python executable from the detected list.
+5.  **Run Notebook Cells:** Once the `cnbs_env` kernel is selected, you can run cells directly within VS Code's integrated notebook editor.
+
 #### Working with Notebooks
-1. After starting Jupyter Lab, a new browser window should open.
-2. Navigate to the notebooks/production/ directory.
-3. Open the appropriate notebook (e.g., 2_LEF_forecast_model.ipynb). Note that there are separate notebooks for:
-    - Forecast model training (not needed for most users), 
-    - Downloading and preprocessing input data from NOAA CFS and other sources, and 
-    - Generating forecasts. 
-4. Set your directory paths in the "User Input" section.
-5. Run the notebook to generate forecasts.
+
+Regardless of how you launched Jupyter Lab (browser, desktop app, or VS Code), the process for working with the notebooks is the same:
+
+1.  Navigate to the `notebooks/production/` directory.
+2.  Open the appropriate notebook (e.g., `2_LEF_forecast_model.ipynb`). Note that there are separate notebooks for:
+    * Forecast model training (not needed for most users),
+    * Downloading and preprocessing input data from NOAA CFS and other sources, and
+    * Generating forecasts.
+3.  Set your directory paths in the "User Input" section within the notebook.
+4.  Run the notebook cells to generate forecasts.
 
 ## Project Structure
 
