@@ -20,11 +20,9 @@ jobs:
     # Use a matrix strategy to run this job on different OS
     strategy:
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest, windows-2019]
-        # You can specify a more precise Windows version if needed, e.g., 'windows-2022'
-        # windows-latest currently maps to windows-2022
-        # See: https://github.com/actions/runner-images
-    
+        # --- CHANGE 1: Use a current Windows runner ---
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        
     # Specify the operating system for the runner
     runs-on: ${{ matrix.os }}
 
@@ -39,13 +37,13 @@ jobs:
         uses: conda-incubator/setup-miniconda@v3 # Use the latest stable version
         with:
           # Python version from your environment.yaml, or a compatible one
-          python-version: 3.11 
+          python-version: 3.12 
           # Environment file to create the environment from
           environment-file: requirements/cnbs_env.yaml
           # Conda channels to use during setup (must match your yaml)
           channels: conda-forge,defaults
           # Whether to use mamba for faster solving (optional, but good)
-          mamba: true 
+          use-mamba: true 
           # Whether to activate the environment after creation
           auto-activate-base: false # Important: Don't auto-activate base, we'll activate our custom env
           # Automatically activate the specified environment
