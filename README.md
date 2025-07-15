@@ -45,20 +45,20 @@ Before you begin, make sure that the following are installed on your system:
 
     ```bash
     git clone https://github.com/great-lakes-ai-lab/cnbs-predictor.git
-    cnbs-predictor
+    cd cnbs-predictor
     ```
 
 2. **Set Up the Conda Environment**: Create and activate the Conda environment. 
 
     ```bash
-    conda env create -f requirements/cnbs-env.yml
-    conda activate cnbs-env
+    conda env create -f requirements/cnbs_env.yaml
+    conda activate cnbs_env
     ```
 
 3. **Set Up Jupyter Kernel**: Register the Conda environment as a Jupyter kernel.
 
     ```bash
-    python -m ipykernel install --user --name cnbs-env --display-name "Python (cnbs-env)"
+    python -m ipykernel install --user --name cnbs_env --display-name "Python (cnbs_env)"
     ```
 
 ### Usage
