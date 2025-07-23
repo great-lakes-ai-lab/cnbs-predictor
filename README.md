@@ -1,6 +1,9 @@
 # cnbs-predictor
+
+Copyright © 2024 The Regents of the University of Michigan
+
 ![License](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)
-![Version](https://img.shields.io/github/release/great-lakes-ai-lab/REPOSITORY.svg)
+![Version](https://img.shields.io/github/release/great-lakes-ai-lab/cnbs-predictor.svg)
 ![Contributors](https://img.shields.io/github/contributors/great-lakes-ai-lab/cnbs-predictor)
 ![Issues](https://img.shields.io/github/issues/great-lakes-ai-lab/cnbs-predictor)
 ![Pull Requests](https://img.shields.io/github/issues-pr/great-lakes-ai-lab/cnbs-predictor)
@@ -10,17 +13,17 @@
 </p>
 
 ## Overview
-Welcome to cnbs-predictor! This software package is designed to forecast key components of Net Basin Supply (NBS) for the Laurentian Great Lakes using atmospheric forecast data. At present, it uses NOAA's Climate Forecast System (CFS) data to forecast precipitation, evaporation, and runoff nine months into the future at monthly intervals.
+Welcome to **cnbs-predictor**! This software package is designed to provide **data-driven forecasts of key components of Net Basin Supply (NBS)** for the Laurentian Great Lakes. By leveraging atmospheric forecast data, it delivers crucial insights into future water balance. At present, it primarily uses NOAA's Climate Forecast System (CFS) data to forecast precipitation, evaporation, and runoff nine months into the future at monthly intervals.
 
 <p align="center">
-  <img src="assets/cnbs-schematic.png" alt="cnbs-logo" width="400"/>
+  <img src="assets/cnbs-schematic.png" alt="Diagram of CNBS-Predictor Workflow" width="400"/>
 </p>
 
 ### Features
-- Advanced Predictive Algorithms: Leverages methods like Gaussian Processes for data-driven forecasting.
-- Real-Time Data Processing: Integrates live forecast data for up-to-date predictions.
-- User-Friendly Interface: Streamlined setup and interactive notebooks for ease of use.
-- Continuous Improvements: Regular updates to enhance features, performance, and modeling capabilities.
+- **Advanced Predictive Algorithms:** Leverages a suite of methods including Gaussian Processes, Linear Regression, Random Forests, and Neural Networks for robust, data-driven forecasting.
+- **Real-Time Data Processing:** Integrates live forecast data for up-to-date predictions.
+- **User-Friendly Interface:** Streamlined setup and interactive notebooks for ease of use.
+- **Continuous Improvements:** Regular updates to enhance features, performance, and modeling capabilities.
 
 ### Target
 Forecast precipitation, evaporation, and runoff, which are the components net basin supply (NBS), for all Laurentian Great Lakes nine months into the future at monthly intervals. 
@@ -136,27 +139,50 @@ Regardless of how you launched Jupyter Lab (browser, desktop app, or VS Code), t
 ```graphql
 cnbs-predictor/
 ├── CODE_OF_CONDUCT.md      # Code of conduct for contributors
+├── CONTRIBUTING.md         # Guidelines for contributing to the project
 ├── LICENSE                 # Project license
-├── docs/                   # Sphinx-based documentation (coming soon)
-├── README.md               # Project README file
-├── requirements/           # Conda environment requirements
-├── src/                    # Source code for data processing and utilities
-│   ├── __init__.py         # Package initialization
-│   ├── data_processing.py  # Functions for data processing
-│   ├── database_utils.py   # Database utility functions
-│   ├── hydro_utils.py      # Hydrology-related utilities
-├── tests/                  # Unit tests for the codebase
-├── notebooks/              # Jupyter notebooks
-│   ├── exploratory/        # Initial exploration notebooks
-│   ├── production/         # Production-ready notebooks (use these to produce forecasts)
-│   └── verification/       # Notebooks for testing and validation
-├── data/                   # Directory for storing input data
-│   ├── cfs/                # Archived CFS forecast data
-│   ├── forecast/           # Forecast files (database, html viewer)
-│   ├── glcc/               # GLCC target data
-│   ├── input/              # Input data (database, trained model weights)
-│   ├── l2swbm/             # L2SWBM target data
-│   └── training/           # Training data
+├── README.md               # Main project README file
+├── ROADMAP.md              # Project roadmap and future development plans
+|
+├── assets/                 # Directory for images and static assets used in documentation
+|
+├── data/                   # Directory for storing raw and processed input/output data
+│   ├── cfs/                # Archived Climate Forecast System (CFS) forecast data
+│   ├── forecast/           # Generated forecast files (e.g., database, html viewer outputs)
+│   ├── glcc/               # Great Lakes Coordinated Current (GLCC) target data
+│   ├── input/              # Input data for models (e.g., database, trained model weights)
+│   ├── l2swbm/             # Large Lake Statistical Water Balance Model (L2SWBM) target data
+│   └── training/           # Data used for training models
+|
+├── docs/                   # Sphinx-based project documentation source files and build outputs
+│   ├── build/              # Output directory for built documentation (e.g., HTML, PDF)
+│   ├── make.bat            # Windows batch file for building documentation
+│   ├── Makefile            # Makefile for building documentation on Unix-like systems
+│   └── source/             # Source files for Sphinx documentation (e.g., .rst, .md files)
+|
+├── notebooks/              # Jupyter notebooks for development, production, and verification
+│   ├── exploratory/        # Notebooks for initial data exploration and model prototyping
+│   ├── production/         # Production-ready notebooks for generating forecasts and primary operations
+│   └── verification/       # Notebooks for testing, validation, and quality control
+|
+├── requirements/           # Conda environment configuration files
+│   └── cnbs_env.yaml       # YAML file for creating the Conda environment
+|
+├── src/                    # Source code for data processing, utilities, and core logic
+│   ├── __init__.py         # Package initialization file
+│   ├── data_processing.py  # Functions for data downloading and preprocessing
+│   ├── database_utils.py   # Utility functions for database interactions
+│   └── hydro_utils.py      # Hydrology-related utility functions
+|
+├── tests/                  # Test suite for the codebase
+│   ├── integration/        # Integration tests for verifying component interactions
+│   └── unit/               # Unit tests for individual functions and modules
+|
+└── venv-docs/              # Python virtual environment specifically for documentation building
+    ├── bin/                # Executables and scripts for the virtual environment
+    ├── include/            # C header files for Python modules
+    ├── lib/                # Python packages installed in the virtual environment
+    └── pyvenv.cfg          # Configuration file for the virtual environment
 ```
 
 ## Contributing
@@ -171,6 +197,10 @@ We welcome contributions to cnbs-predictor! Please start a discussion with the m
 
 For detailed contributing instructions, please refer to the [Contributing guidelines](CONTRIBUTING.md). For a summary of current development plans to help map out possible contributions, see our [Roadmap document](ROADMAP.md).
 
+## Documentation
+
+Comprehensive software documentation, including API references and detailed usage examples, will be available soon in our `docs/` directory. For now, please refer to the Jupyter notebooks in the `notebooks/production/` directory for practical guidance.
+
 ## Code of Conduct
 
 This project adheres to a [Code of Conduct](CODE_OF_CONDUCT.md). By participating, you agree to follow this code and foster a welcoming and respectful community.
@@ -178,6 +208,18 @@ This project adheres to a [Code of Conduct](CODE_OF_CONDUCT.md). By participatin
 ## License
 
 This project is licensed under the [GNU Affero General Public License Version 3.0](LICENSE).
+
+## Tags
+
+`forecasting`, `hydrology`, `meteorology`, `Great Lakes`, `NBS`, `Net Basin Supply`, `NOAA`, `CFS`, `Python`, `Jupyter Notebooks`, `Machine Learning`, `Gaussian Process`
+
+## References
+
+Fitzpatrick, L., Jones, D.C., McAnear, M., Mroczka, B., Hong, Y., & Fry, L. (2024). Improving Subseasonal to Annual Water Level Forecasts in the North American Great Lakes Using Machine Learning. American Geophysical Union 2024 Fall Meeting, Washington D.C., Presentation. [https://doi.org/10.22541/essoar.173758147.79259133/v1](https://doi.org/10.22541/essoar.173758147.79259133/v1)
+
+### Individual Contributors
+Thank you to all the individuals who have contributed to `cnbs-predictor`!
+You can see a full list of our contributors here: [Contributors](https://github.com/great-lakes-ai-lab/cnbs-predictor/graphs/contributors). With a special thanks to Matt McAnear for foundational contributions to the MVP of this project!
 
 ## Acknowledgements
 
