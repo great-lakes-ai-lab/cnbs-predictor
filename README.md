@@ -217,6 +217,10 @@ This project is licensed under the [GNU Affero General Public License Version 3.
 
 Fitzpatrick, L., Jones, D.C., McAnear, M., Mroczka, B., Hong, Y., & Fry, L. (2024). Improving Subseasonal to Annual Water Level Forecasts in the North American Great Lakes Using Machine Learning. American Geophysical Union 2024 Fall Meeting, Washington D.C., Presentation. [https://doi.org/10.22541/essoar.173758147.79259133/v1](https://doi.org/10.22541/essoar.173758147.79259133/v1)
 
+### Individual Contributors
+Thank you to all the individuals who have contributed to `cnbs-predictor`!
+You can see a full list of our contributors here: [Contributors](https://github.com/great-lakes-ai-lab/cnbs-predictor/graphs/contributors). With a special thanks to Matt McAnear for foundational contributions to the MVP of this project!
+
 ## Acknowledgements
 
 `cnbs-predictor` is powered by institutional collaboration from:
