@@ -3,7 +3,7 @@
 Our project aims to develop increasingly sophisticated tools for predicting key hydrological and meteorological variables, building from foundational models to comprehensive predictive systems. We're committed to continuous improvement, integrating new data sources, methodologies, and user interfaces as we progress.
 
 <p align="center">
-  <img src="assets/roadmap_schematic.png" alt="cnbs-logo" width="150"/>
+  <img src="assets/roadmap_schematic.png" alt="cnbs-logo" width="500"/>
 </p>
 
 ---
