@@ -2,6 +2,8 @@ import pandas as pd
 import numpy as np
 import calendar
 import os
+import requests
+from io import StringIO
 
 def load_glcc_data(directory, units):
     """
@@ -74,10 +76,6 @@ def load_glcc_data(directory, units):
 
     return df_obs_merged
 
-
-import os
-import pandas as pd
-
 def load_l2swbm_data(folder):
     lakes = {
         'superior': 'sup',
@@ -118,3 +116,88 @@ def load_l2swbm_data(folder):
     final_df.rename(columns=lambda col: col.replace('precip_', 'precipitation_').replace('evap_', 'evaporation_'), inplace=True)
 
     return final_df
+
+def load_glsea_data(file_path, units='K'):
+    """
+    Reads GLSEA SST data from a file and returns a cleaned DataFrame with selected columns.
+    
+    Parameters:
+        file_path (str): Path to the SST CSV file.
+        units (str): Temperature units, either 'K' (Kelvin) or 'C' (Celsius). Default is 'K'.
+    
+    Returns:
+        pd.DataFrame: Processed SST DataFrame with selected lakes and optional unit conversion.
+    """
+    # Read the data
+    df_sst = pd.read_csv(file_path, sep=r'\s+', skiprows=6, comment='-')
+
+    # Convert Year and Day-of-year into datetime
+    df_sst['date'] = pd.to_datetime(df_sst['Year'].astype(str) + df_sst['Day'].astype(str), format='%Y%j')
+    df_sst.set_index('date', inplace=True)
+    df_sst.drop(columns=['Year', 'Day'], inplace=True)
+
+    # Rename columns
+    df_sst.columns = ['superior_sst', 'michigan_sst', 'huron_sst', 'erie_sst', 'ontario_sst', 'stclair_sst']
+
+    # Michigan-Huron average
+    df_sst['michigan-huron_sst'] = (df_sst['michigan_sst'] + df_sst['huron_sst']) / 2
+
+    # Select columns
+    df_sst = df_sst[['superior_sst', 'michigan-huron_sst', 'erie_sst', 'ontario_sst']]
+
+    # Convert units if required
+    if units.upper() == 'K':
+        df_sst += 273.15
+    elif units.upper() != 'C':
+        raise ValueError("Unsupported units. Use 'C' for Celsius or 'K' for Kelvin.")
+
+    return df_sst
+
+def get_current_ssts(url):
+    """
+    Fetch the full daily lake average surface water temperature
+    from a NOAA GLSEA .dat file.
+
+    Parameters
+    ----------
+    url : str
+        The URL of the .dat file.
+
+    Returns
+    -------
+    pd.DataFrame
+        A DataFrame with columns: Date, Superior, Michigan-Huron, Erie, Ontario
+        or None if the URL is not accessible.
+    """
+
+    # Download file as text
+    response = requests.get(url)
+    response.raise_for_status()
+    text_data = response.text
+
+    # Keep only data lines (start with a digit)
+    lines = text_data.strip().split("\n")
+    data_lines = [line for line in lines if line.strip() and line[0].isdigit()]
+
+    # Column names from file
+    col_names = ["year", "day", "superior_sst", "michigan_sst", "huron_sst", "erie_sst", "ontario_sst", "st.clair_sst"]
+
+    # Read all data lines into DataFrame
+    df = pd.read_csv(StringIO("\n".join(data_lines)), sep=r"\s+", names=col_names)
+
+    # Convert Year + Julian Day → datetime
+    df["date"] = pd.to_datetime(df["year"].astype(str) + df["day"].astype(str), format="%Y%j")
+
+    # Compute Michigan-Huron average
+    df["michigan-huron_sst"] = df[["michigan_sst", "huron_sst"]].mean(axis=1)
+
+    # Select and rename desired columns
+    df = df[["date", "superior_sst", "michigan-huron_sst", "erie_sst", "ontario_sst"]]
+
+    # Convert temperatures from Celsius to Kelvin
+    for col in ["superior_sst", "michigan-huron_sst", "erie_sst", "ontario_sst"]:
+        df[col] = df[col] + 273.15
+
+    df.set_index('date', inplace=True)
+
+    return df

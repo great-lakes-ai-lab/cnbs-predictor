@@ -2,6 +2,8 @@ import calendar
 import numpy as np
 import pandas as pd
 import joblib
+from datetime import datetime
+from dateutil.relativedelta import relativedelta
 
 
 def seconds_in_month(year, month):
@@ -160,3 +162,25 @@ def load_model(model_name: str, models_info: list):
         raise ValueError(f"Model '{model_name}' not found in models_info")
 
     return joblib.load(path)
+
+def get_first_forecast_month():
+    """
+    Determine the minimum forecast month based on today's date.
+    If today's day >= 26, use next month; otherwise, use the current month.
+
+    Returns
+    -------
+    str
+        Minimum forecast month in 'YYYY-MM' format.
+    """
+    today = datetime.today()
+
+    if today.day >= 26:
+        first_forecast_month = (today + relativedelta(months=1)).strftime("%Y-%m")
+    else:
+        first_forecast_month = today.strftime("%Y-%m")
+
+    # Print the first forecast month for debugging
+    print(f"First forecast month: {first_forecast_month}")
+
+    return first_forecast_month
