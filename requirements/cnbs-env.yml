@@ -1,0 +1,47 @@
+---
+name: cnbs_env
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python==3.12.3
+  - scipy
+  - scikit-learn
+  - beautifulsoup4
+  - boto3
+  - botocore
+  - cfgrib==0.9.15.0
+  - pandas
+  - netcdf4
+  - numpy
+  - joblib
+  - jupyter
+  - jupyterlab
+  - ipykernel
+  - matplotlib
+  - pillow
+  - plotly
+  - prompt-toolkit
+  - properscoring
+  - requests
+  - requests-toolbelt
+  - setuptools
+  - sqlite
+  - tabulate
+  - urllib3
+  - zlib
+  - zeromq
+  - pyyaml
+  - xarray
+  - pip
+  - pip:
+      - h5py
+      - keras
+      - libclang
+      - markdown
+      - markdown-it-py
+      - tensorboard
+      - tensorboard-data-server
+      - tensorflow
+      - tensorflow-intel
+      - termcolor
