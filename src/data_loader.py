@@ -5,6 +5,132 @@ import os
 import requests
 from io import StringIO
 
+class DataLoader:
+    def __init__(self):
+        pass  # Add config or default paths here if needed
+
+    def glcc(self, directory, units='cms'):
+        """
+        Load observed GLCC NBS data for all four lakes in either 'cms' or 'mm' units.
+        """
+        filenames = {
+            'superior': 'LakeSuperior_MonthlyNetBasinSupply_1900to2025.csv',
+            'michigan-huron': 'LakeMichiganHuron_MonthlyNetBasinSupply_1900to2025.csv',
+            'erie': 'LakeErie_MonthlyNetBasinSupply_1900to2025.csv',
+            'ontario': 'LakeOntario_MonthlyNetBasinSupply_1900to2025.csv',
+        }
+
+        def format_data(df):
+            df_long = df.melt(id_vars=['Year'], var_name='Month', value_name='Observed')
+            df_long['date'] = pd.to_datetime(
+                df_long['Year'].astype(str) + '-' + df_long['Month'].str[1:4] + '-01',
+                format='%Y-%b-%d'
+            )
+            return df_long[['date', 'Observed']].sort_values('date').reset_index(drop=True)
+
+        dfs = []
+        for lake, filename in filenames.items():
+            path = os.path.join(directory, filename)
+            df = pd.read_csv(path, skiprows=11)
+            formatted = format_data(df).rename(columns={'Observed': f'{lake}_nbs_obs'})
+            dfs.append(formatted)
+
+        # Merge all dataframes on 'date'
+        df_merged = dfs[0]
+        for df in dfs[1:]:
+            df_merged = pd.merge(df_merged, df, on='date', how='outer')
+
+        df_merged.replace(-99990.0, np.nan, inplace=True)
+
+        lake_cols = [col for col in df_merged.columns if col.endswith('_nbs_obs')]
+        df_merged.dropna(subset=lake_cols, how='all', inplace=True)
+
+        if units == 'mm':
+            lake_areas = {
+                'superior': 78288645587.81192,
+                'michigan-huron': 123626283030.46616,
+                'erie': 18596386416.712486,
+                'ontario': 15569248531.837788
+            }
+
+            df_merged['seconds_in_month'] = df_merged['date'].apply(
+                lambda x: calendar.monthrange(x.year, x.month)[1] * 24 * 60 * 60
+            )
+
+            for col in lake_cols:
+                lake = col.replace('_nbs_obs', '')
+                area = lake_areas.get(lake)
+                if area:
+                    df_merged[col] = (
+                        df_merged[col] * df_merged['seconds_in_month'] / area * 1000
+                    )
+
+            df_merged.drop(columns='seconds_in_month', inplace=True)
+
+        df_merged.set_index('date', inplace=True)
+        return df_merged
+
+    def l2swbm(self, directory):
+        """
+        Load L2SWBM runoff, evaporation, and precipitation for all lakes.
+        """
+        lakes = {
+            'superior': 'sup',
+            'michigan-huron': 'mih',
+            'erie': 'eri',
+            'ontario': 'ont'
+        }
+        variables = ['Evap', 'Runoff', 'Precip']
+        dfs = []
+
+        for lake_name in lakes.keys():
+            lake_data = {}
+            for var in variables:
+                lake_file_name = lake_name.replace('michigan-huron', 'miHuron')
+                file_path = os.path.join(directory, f'{lake_file_name}{var}_MonthlyRun.csv')
+
+                df = pd.read_csv(file_path)
+                df['date'] = pd.to_datetime(
+                    df['Year'].astype(int).astype(str) + '-' +
+                    df['Month'].astype(int).astype(str).str.zfill(2)
+                )
+                col_name = f'{lake_name.lower()}_{var.lower()}_obs'
+                lake_data[col_name] = df['Median']
+                if 'date' not in lake_data:
+                    lake_data['date'] = df['date']
+            lake_df = pd.DataFrame(lake_data)
+            dfs.append(lake_df)
+
+        # Merge all lake dataframes on 'date'
+        final_df = dfs[0]
+        for df in dfs[1:]:
+            final_df = pd.merge(final_df, df, on='date')
+
+        final_df.set_index('date', inplace=True)
+        final_df.rename(columns=lambda col: col.replace('precip_', 'precipitation_').replace('evap_', 'evaporation_'), inplace=True)
+        return final_df
+
+    def glsea(self, file_path, units='K'):
+        """
+        Reads GLSEA SST data from a file and returns a cleaned DataFrame.
+        """
+        df = pd.read_csv(file_path, sep=r'\s+', skiprows=6, comment='-')
+
+        df['date'] = pd.to_datetime(df['Year'].astype(str) + df['Day'].astype(str), format='%Y%j')
+        df.set_index('date', inplace=True)
+        df.drop(columns=['Year', 'Day'], inplace=True)
+
+        df.columns = ['superior_sst', 'michigan_sst', 'huron_sst', 'erie_sst', 'ontario_sst', 'stclair_sst']
+        df['michigan-huron_sst'] = (df['michigan_sst'] + df['huron_sst']) / 2
+        df = df[['superior_sst', 'michigan-huron_sst', 'erie_sst', 'ontario_sst']]
+
+        if units.upper() == 'K':
+            df += 273.15
+        elif units.upper() != 'C':
+            raise ValueError("Unsupported units. Use 'C' for Celsius or 'K' for Kelvin.")
+
+        return df
+
 def load_glcc_data(directory, units):
     """
     Load and return observed GLCC NBS data for all four lakes in either 'cms' or 'mm' units.

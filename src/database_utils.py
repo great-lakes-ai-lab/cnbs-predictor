@@ -1,137 +1,21 @@
-import urllib.request
-from bs4 import BeautifulSoup
-import boto3
-from botocore import UNSIGNED
-from botocore.client import Config
-import os
-import requests
 import sqlite3
-from datetime import datetime, timedelta
+import os
+import pandas as pd
+from datetime import datetime, timedelta, timezone
+from dateutil.relativedelta import relativedelta
 
-def download_grb2_ncei(product, url_path, download_dir):
-    """
-    Downloads GRB2 CFS forecast files from the National Centers for Environmental Information (NCEI).
+class CFSDatabase:
+    def __init__(self, database, table):
+        self.database = database
+        self.table = table
 
-    Parameters:
-    product (str): The product type (e.g., 'pgbf', 'flxf') used to filter GRB2 files.
-    url_path (str): The URL path to the NCEI directory containing the GRB2 files.
-    download_dir (str): The local directory where the files should be downloaded.
-
-    Returns:
-    None
-    """
-
-    try:
-        response = urllib.request.urlopen(url_path)
-        html_content = response.read().decode('utf-8')
-        soup = BeautifulSoup(html_content, 'html.parser')
-        links = soup.find_all('a', href=lambda href: href and href.startswith(product) and href.endswith('grib.grb2'))
-        
-        for link in links:
-            file_url = url_path + link['href']
-            filename = link['href'].split('/')[-1]
-            file_path = os.path.join(download_dir, filename)
-            urllib.request.urlretrieve(file_url, file_path)
-            print(f"Downloaded: {filename}")
-
-    except Exception as e:
-        print(f"ERROR: {e}")
-
-
-def download_grb2_aws(product, bucket_name, url_path, download_dir):
-    """
-    Download the CFS forecast from AWS
-
-    Parameters:
-    - product: 'flx' or 'pgb'
-    - bucket_name: for CFS data it is 'noaa-cfs-pds'
-    - url_path: the url path to data
-    - download_dir: location to download data to
-    """
-    num_files_downloaded = 0
-
-    # Create a boto3 client for S3
-    s3_config = Config(signature_version=UNSIGNED)
-    s3 = boto3.client('s3', config=s3_config)
-
-    # List all objects in the specified folder path
-    continuation_token = None
-    objects = []
-
-    # Use a loop to handle pagination
-    while True:
-        list_objects_args = {'Bucket': bucket_name, 'Prefix': url_path}
-        if continuation_token:
-            list_objects_args['ContinuationToken'] = continuation_token
-
-        list_objects_response = s3.list_objects_v2(**list_objects_args)
-
-        objects.extend(list_objects_response.get('Contents', []))
-
-        if not list_objects_response.get('IsTruncated', False):
-            break
-
-        continuation_token = list_objects_response.get('NextContinuationToken')
-
-    # Iterate over each object and download if it ends with '.grb2'
-    for obj in objects:
-        key = obj['Key']
-        if product in key and key.endswith('grib.grb2'): #if key.endswith('.grb2'):
-            local_file_path = os.path.join(download_dir, os.path.relpath(key, url_path))
-
-            # Ensure the directory structure exists
-            os.makedirs(os.path.dirname(local_file_path), exist_ok=True)
-
-            # Download the file
-            s3.download_file(bucket_name, key, local_file_path)
-            num_files_downloaded += 1
-
-            print(f"Downloaded: {key}")
-
-def check_url_exists(url):
-    """
-    Check if a URL exists by sending a HEAD request.
-
-    Parameters:
-    - url (str): The URL to check.
-
-    Returns:
-    - bool: True if the URL returns a status code 200 (OK), False otherwise.
-    """
-    try:
-        response = requests.head(url, allow_redirects=True)  # Allow redirects in case of URL redirection
-        # Check if the response is OK (status code 200)
-        return response.status_code == 200
-    except requests.RequestException as e:
-        # You could log the error or handle specific exceptions (e.g., network issues)
-        print(f"ERROR occurred while checking the URL: {e}")
-        return False
-    
-
-def open_cfs_db(database):
-    """
-    Opens a connection to the database. If the database does not exist, it creates a new one.
-    It also creates a table `forecast_data` if it does not already exist.
-
-    Parameters:
-    - database (str): The path to the SQLite database file.
-
-    Returns:
-    - conn (sqlite3.Connection): The connection object to the database.
-    - cursor (sqlite3.Cursor): The cursor object to execute SQL commands.
-    """
-    try:
-        # Check if the database file exists
-        if not os.path.exists(database):
-            print(f"Creating new database: '{database}'.")
-
-        # Connect to the database (it will create it if it doesn't exist)
-        conn = sqlite3.connect(database)
+    def open(self):
+        if not os.path.exists(self.database):
+            print(f"Creating new database: {self.database}")
+        conn = sqlite3.connect(self.database)
         cursor = conn.cursor()
-
-        # Create the forecast_data table if it doesn't exist
-        cursor.execute('''
-        CREATE TABLE IF NOT EXISTS cfs_forecast_data (
+        cursor.execute(f'''
+        CREATE TABLE IF NOT EXISTS {self.table} (
             cfs_run INTEGER,
             year INTEGER,
             month INTEGER,
@@ -142,127 +26,233 @@ def open_cfs_db(database):
             PRIMARY KEY (cfs_run, year, month, lake, surface_type, component)
         )
         ''')
-
-        # Commit the changes (though nothing to commit here since it's a table creation)
         conn.commit()
-        
-        # Return connection and cursor
         return conn, cursor
-
-    except sqlite3.Error as e:
-        print(f"ERROR opening/creating database: {e}")
-        return None, None
-
-
-def pull_from_db(database, table, cfs_run, year, month, lake, surface_type, component):
-    """
-    Pulls a value from the database based on specific query parameters.
-
-    Parameters:
-    - database (str): Path to database.
-    - table (str): Table name from which to fetch the data.
-    - cfs_run (int): The forecast run identifier.
-    - year (int): The forecast year.
-    - month (int): The forecast month.
-    - lake (str): The lake name.
-    - surface_type (str): The type of surface ('land' or 'lake').
-    - component (str): The CNBS type (e.g., 'precipitation', 'evaporation').
-
-    Returns:
-    - value [mm] (float or None): The value for the specified query parameters, or None if not found or an error occurs.
-    """
-    try:
-        # Establish a connection to the SQLite database
-        conn = sqlite3.connect(database)
-        cursor = conn.cursor()
-
-        # SQL query to fetch the value from the specified table
-        query = f'''
-        SELECT "value [mm]" FROM {table}
-        WHERE cfs_run = ? AND year = ? AND month = ? AND lake = ? AND surface_type = ? AND component = ?
-        '''
-
-        # Execute the query with the provided parameters
-        cursor.execute(query, (cfs_run, year, month, lake, surface_type, cnbs))
-
-        # Fetch the result (None if not found)
-        result = cursor.fetchone()
-
-        # Close the database connection
-        conn.close()
-
-        # Return the value if found, otherwise return None
-        if result:
-            return result[0]
-        else:
-            print(f"ERROR: No data found for cfs_run={cfs_run}, year={year}, month={month}, lake={lake}, surface_type={surface_type}, component={component}")
-            return None
-
-    except sqlite3.Error as e:
-        print(f"ERROR accessing the database: {e}")
-        return None
     
-def get_next_cfs_run(database, table):
-    """
-    Retrieves the next CFS run timestamp from the database table based on the last entry.
-    The function calculates the next forecast run time, which is incremented by 6 hours.
+    def load(self):
+        # Create a connection to the SQLite database
+        conn = sqlite3.connect(self.database)
 
-    Parameters:
-    - database (str): Path to the SQLite database file.
-    - table (str): Name of the table containing the CFS run data.
+        # Use an f-string to insert the table name properly
+        query = f'SELECT * FROM {self.table}'
 
-    Returns:
-    - next_cfs_run (str): The next CFS run time in MM-DD-YYYY HH format, or None if an error occurs.
-    """
-    try:
-        # Establish a connection to the SQLite database
-        conn = sqlite3.connect(database)
-        cursor = conn.cursor()
+        # Execute the query and fetch the data into a DataFrame
+        data = pd.read_sql(query, conn)
 
-        # Query to get the last entry in the table efficiently
-        query = f'''
-        SELECT cfs_run FROM {table}
-        ORDER BY cfs_run DESC
-        LIMIT 1;
-        '''
-        cursor.execute(query)
-        result = cursor.fetchone()
-
-        # Close the connection to the database
+        # Close the connection once done
         conn.close()
 
-        if result:
-            # Get the last cfs_run
-            last_cfs_run = result[0]
+        return data
 
-            # Convert cfs_run (integer) to datetime object (format YYYYMMDDHH)
-            last_datetime = datetime.strptime(str(last_cfs_run), '%Y%m%d%H')
-
-            # Determine the next forecast time based on the last cfs_run
-            if last_datetime.hour == 18:
-                # If the last hour was 18, increment to the next day at 00:00
-                next_datetime = last_datetime + timedelta(days=1)
-                next_hour = 0
-            elif last_datetime.hour == 12:
-                next_hour = 18
-                next_datetime = last_datetime
-            elif last_datetime.hour == 6:
-                next_hour = 12
-                next_datetime = last_datetime
+    def pull(self, cfs_run, year, month, lake, surface_type, component):
+        try:
+            conn = sqlite3.connect(self.database)
+            cursor = conn.cursor()
+            query = f'''
+            SELECT "value [mm]" FROM {self.table}
+            WHERE cfs_run = ? AND year = ? AND month = ? AND lake = ? AND surface_type = ? AND component = ?
+            '''
+            cursor.execute(query, (cfs_run, year, month, lake, surface_type, component))
+            result = cursor.fetchone()
+            conn.close()
+            if result:
+                return result[0]
             else:
-                # If the last hour was 0 or any other, increment to 06:00
-                next_hour = 6
-                next_datetime = last_datetime
-
-            # Format the next CFS run as MM-DD-YYYY HH
-            next_cfs_run = next_datetime.strftime('%m-%d-%Y') + " " + str(next_hour).zfill(2)
-            return next_cfs_run
-
-        else:
-            print("ERROR: No CFS run entries found in the database. Ensure the table contains data.")
+                print(f"No data found for {locals()}")
+                return None
+        except sqlite3.Error as e:
+            print(f"Database error: {e}")
             return None
 
-    except sqlite3.Error as e:
-        print(f"ERROR accessing the database: {e}")
-        return None
-    
+    def add(self, cfs_run, year, month, lake, surface_type, component, value):
+        """
+        Adds a record to the specified database table using SQLite, inserting or replacing based on primary key.
+
+        Parameters:
+        database (str): Path to the database file.
+        table (str): Name of the table where the data should be inserted.
+        cfs_run (str): The CFS run identifier.
+        year (int): Forecast year (2024, 2025, etc.).
+        month (int): Forecast month (should be between 1 and 12).
+        lake (str): The lake related to the data.
+        surface_type (str): Surface type over 'lake' or 'land'.
+        component (str): NBS Component ('precipitation', 'evaporation', 'runoff', or 'cnbs').
+        value (float): The value in millimeters [mm].
+
+        Raises:
+        ValueError: If year is not an integer, month is not between 1 and 12, or any other input is invalid.
+        sqlite3.DatabaseError: If there is an error interacting with the database.
+        """
+
+        # Input validation
+        if not isinstance(year, int):
+            raise ValueError(f"ERROR: Year must be an integer.")
+        if not (1 <= month <= 12):
+            raise ValueError(f"ERROR: Month must be between 1 and 12.")
+        if not isinstance(cfs_run, str) or not isinstance(lake, str) or not isinstance(surface_type, str) or not isinstance(component, str):
+            raise ValueError("ERROR: cfs_run, lake, surface type, and CNBS must be strings.")
+        if not isinstance(value, (float, int)):
+            raise ValueError(f"ERROR: Value must be a numeric type.")
+
+        try:
+            # Connect to the database
+            conn = sqlite3.connect(self.database)
+            cursor = conn.cursor()
+
+            # Properly insert the table name using f-string (escaped) or str.format() outside of the SQL statement
+            query = f'''
+            INSERT OR REPLACE INTO {self.table} (
+                cfs_run, year, month, lake, surface_type, component, "value [mm]"
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            '''
+
+            # Insert the data into the table
+            cursor.execute(query, (cfs_run, year, month, lake, surface_type, component, value))
+
+            # Commit the transaction and close the connection
+            conn.commit()
+            conn.close()
+
+        except sqlite3.DatabaseError as e:
+            raise sqlite3.DatabaseError(f"Database error occurred: {e}")
+        
+    def add_df(self, df, if_exists="append"):
+        """
+        Add an entire pandas DataFrame to the database table.
+
+        Parameters:
+        df (pd.DataFrame): The DataFrame to insert. Must contain the columns:
+                           ['cfs_run', 'year', 'month', 'lake', 'surface_type', 'component', 'value [mm]']
+        if_exists (str): How to behave if the table already exists.
+                         Options: 'fail', 'replace', 'append' (default).
+        """
+
+        required_cols = ['cfs_run', 'forecast_month', 'model', 'lake', 'precipitation', 'evaporation', 'runoff', 'nbs']
+        missing_cols = [col for col in required_cols if col not in df.columns]
+        if missing_cols:
+            raise ValueError(f"Missing required columns in DataFrame: {missing_cols}")
+
+        try:
+            conn = sqlite3.connect(self.database)
+
+            # Insert DataFrame into the database
+            df.to_sql(self.table, conn, if_exists=if_exists, index=False)
+
+            conn.close()
+        except sqlite3.DatabaseError as e:
+            raise sqlite3.DatabaseError(f"Database error occurred while inserting DataFrame: {e}")
+        
+    def get_next_run(self):
+        try:
+            conn = sqlite3.connect(self.database)
+            cursor = conn.cursor()
+
+            # Check if the table exists
+            cursor.execute(f'''
+                SELECT name FROM sqlite_master 
+                WHERE type='table' AND name='{self.table}'
+            ''')
+            if not cursor.fetchone():
+                raise sqlite3.OperationalError(f"Table '{self.table}' does not exist. Resorting to fallback date.")
+
+            # Get the most recent run
+            cursor.execute(f'''
+                SELECT cfs_run FROM {self.table} 
+                ORDER BY cfs_run DESC LIMIT 1
+            ''')
+            result = cursor.fetchone()
+            conn.close()
+
+            if result and result[0]:
+                raw_value = str(result[0]).strip()
+
+                # Try parsing with common formats
+                for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H"):
+                    try:
+                        last_run = datetime.strptime(raw_value, fmt)
+                        break
+                    except ValueError:
+                        continue
+                else:
+                    raise ValueError(f"Unrecognized datetime format: {raw_value}")
+
+                hour = last_run.hour
+
+                # Decide what to return based on the hour
+                if hour in (0, 6, 12):
+                    # Same date at midnight
+                    next_run = last_run.replace(hour=0, minute=0, second=0, microsecond=0)
+                    print(f"WARNING: Last date {next_run.strftime('%m-%d-%Y')} did not download all runs. Redownloading beginning from that date.")
+                elif hour == 18:
+                    # Next day at midnight
+                    next_run = (last_run + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+                else:
+                    # Unexpected hour - fallback behavior, treat as same date at midnight with warning
+                    next_run = last_run.replace(hour=0, minute=0, second=0, microsecond=0)
+                    print(f"WARNING: Unexpected hour {hour} in last run date. Defaulting to {next_run.strftime('%m-%d-%Y')} at midnight.")
+
+                return next_run  # datetime object with time zeroed
+
+            else:
+                raise ValueError("Table exists but no previous run was found. Resorting to fallback date.")
+
+        except (sqlite3.Error, ValueError) as e:
+            print(f"WARNING: {e}")
+            # Fallback: first of the month, 9 months ago at midnight UTC
+            now_utc = datetime.now(timezone.utc)
+            nine_months_ago = now_utc.replace(day=1, hour=0, minute=0, second=0, microsecond=0) - relativedelta(months=9)
+            return nine_months_ago  # datetime object at midnight
+
+    def get_date_range(self, auto='yes', start_date=None, end_date=None):
+        """
+        Determine the start and end dates for CFS CSV downloads, and return the date range.
+
+        Parameters
+        ----------
+        auto : str, default 'yes'
+            Whether to automatically fetch the next run date from the database ('yes' or 'no').
+        start_date : str, optional
+            Manual start date in format 'MM-DD-YYYY'. Required if auto='no'.
+        end_date : str, optional
+            Manual end date in format 'MM-DD-YYYY'. Required if auto='no'.
+
+        Returns
+        -------
+        tuple
+            (start_date: datetime, end_date: datetime, date_array: pd.DatetimeIndex)
+        """
+        if auto.lower() == 'yes':
+            start_date = self.get_next_run()
+            end_date = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=1)
+        else:
+            start_date = datetime.strptime(start_date, "%m-%d-%Y")
+            end_date = datetime.strptime(end_date, "%m-%d-%Y")
+
+        # Validate dates
+        if start_date == end_date:
+            print("The CSV files are up-to-date.")
+        elif start_date > end_date:
+            raise ValueError("End date cannot be older than start date. Try again.")
+        else:
+            print(f"Starting from: {start_date.strftime('%m-%d-%Y')} and continuing through: {end_date.strftime('%m-%d-%Y')}")
+
+        date_array = pd.date_range(start=start_date, end=end_date, freq='1d')
+        return start_date, end_date, date_array
+
+    def print_columns(self):
+        try:
+            conn = sqlite3.connect(self.database)
+            cursor = conn.cursor()
+            cursor.execute(f'PRAGMA table_info({self.table})')
+            columns = cursor.fetchall()
+            conn.close()
+
+            if columns:
+                print(f"Columns in table '{self.table}':")
+                for col in columns:
+                    print(f"- {col[1]} ({col[2]})")
+            else:
+                print(f"Table '{self.table}' does not exist or has no columns.")
+
+        except sqlite3.Error as e:
+            print(f"Database error: {e}")
