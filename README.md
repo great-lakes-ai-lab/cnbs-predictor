@@ -30,7 +30,9 @@ Forecast precipitation, evaporation, and runoff, which are the components net ba
 | Abbreviation | Name                                           | Source             |
 |--------------|------------------------------------------------|--------------------|
 | CFS          | Climate Forecast System v2                     | NOAA               |
+| GLSEA        | Great Lakes Surface Environmental Analysis     | NOAA GLERL         |
 | LS2SWBM      | Large Lake Statistical Water Balance Model     | NOAA GLERL         |
+| GLCC         | Great Lakes Coordinating Committee             |                    |
 
 ## Getting Started
 
