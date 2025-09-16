@@ -1,5 +1,5 @@
 ---
-name: cnbs_env
+name: nbs_env
 channels:
   - conda-forge
   - defaults
