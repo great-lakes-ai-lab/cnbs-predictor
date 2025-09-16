@@ -67,7 +67,7 @@ On a **Windows** computer, you will need to open the **Anaconda Prompt**.
 3. **Set Up Jupyter Kernel**: Register the Conda environment as a Jupyter kernel.
 
     ```bash
-    python -m ipykernel install --user --name cnbs-predictor-env --display-name "Python (cnbs-predictor-env)"
+    python -m ipykernel install --user --name nbs_env --display-name "Python (nbs_env)"
     ```
 
 ### Usage
