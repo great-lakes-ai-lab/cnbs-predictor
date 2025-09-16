@@ -18,21 +18,23 @@ Welcome to cnbs-predictor! This software package is designed to forecast key com
 - User-Friendly Interface: Streamlined setup and interactive notebooks for ease of use.
 - Continuous Improvements: Regular updates to enhance features, performance, and modeling capabilities.
 
-### Target
-Forecast precipitation, evaporation, and runoff, which are the components net basin supply (NBS), for all Laurentian Great Lakes nine months into the future at monthly intervals. 
+### Targets
+Forecast precipitation (P), evaporation (E), runoff (R), and net basin supply (NBS) for all of the Laurentian Great Lakes up to twelve (12) months into the future at monthly intervals. By forecasting NBS directly, rather than deriving it from the individual component forecasts—we reduce the accumulation of error and improve overall forecast reliability.
 
 ### Inputs
-- Data Source: NOAA forecast data from the Climate Forecast System (CFS), which must be downloaded and preprocessed before a forecast can be generated. This repository contains notebooks for carrying out this downloading and preprocessing. 
+- Data Source: NOAA forecast data from the Climate Forecast System (CFS), which must be downloaded and preprocessed before generating forecasts. Additionally, sea surface temperatures from GLSEA are required as initial conditions. This repository includes notebooks to handle both downloading and preprocessing of both datasets. 
 - Required Datasets: Please refer to the 'Data Sources' section below for specific files and data organization.
 
 ### Data Sources
 
-| Abbreviation | Name                                           | Source             |
-|--------------|------------------------------------------------|--------------------|
-| CFS          | Climate Forecast System v2                     | NOAA               |
-| GLSEA        | Great Lakes Surface Environmental Analysis     | NOAA GLERL         |
-| LS2SWBM      | Large Lake Statistical Water Balance Model     | NOAA GLERL         |
-| GLCC         | Great Lakes Coordinating Committee             |                    |
+| Abbreviation | Name                                           | Source         | Data Use        |
+|--------------|------------------------------------------------|----------------|----------------|
+| CFSR         | Climate Forecast System Reanalysis             | NOAA           | Training       |
+| CFS          | Climate Forecast System v2                     | NOAA           | Forecasting    |
+| GLSEA        | Great Lakes Surface Environmental Analysis     | NOAA GLERL     | Forecasting |
+| LS2SWBM      | Large Lake Statistical Water Balance Model     | NOAA GLERL     | Training    |
+| GLCC         | Great Lakes Coordinating Committee             |                | Training |
+
 
 ## Getting Started
 
@@ -45,7 +47,8 @@ Before you begin, make sure that the following are installed on your system:
 ### Installation  
 
 On a **Mac**, begin by opening a **Terminal** window.  
-On a **Windows** computer, you can use either **Command Prompt**, **PowerShell**, or (recommended) the **Anaconda Prompt** if you already have Anaconda/Miniconda installed.  
+On a **Windows** computer, you will need to open the **Anaconda Prompt**.  
+- If you don’t already have Anaconda or Miniconda installed, download and install it from: https://www.anaconda.com/download  
 
 1. **Clone the Repository:** Clone the repository to your target machine.
 
