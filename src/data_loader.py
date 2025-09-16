@@ -131,7 +131,7 @@ class DataLoader:
 
         return df
 
-def load_glcc_data(directory, units):
+def glcc(directory, units):
     """
     Load and return observed GLCC NBS data for all four lakes in either 'cms' or 'mm' units.
     

@@ -203,17 +203,17 @@ class CFSDatabase:
             nine_months_ago = now_utc.replace(day=1, hour=0, minute=0, second=0, microsecond=0) - relativedelta(months=9)
             return nine_months_ago  # datetime object at midnight
 
-    def get_date_range(self, auto='yes', start_date=None, end_date=None):
+    def get_date_range(self, auto, start_date, end_date):
         """
         Determine the start and end dates for CFS CSV downloads, and return the date range.
 
         Parameters
         ----------
-        auto : str, default 'yes'
+        auto : str,
             Whether to automatically fetch the next run date from the database ('yes' or 'no').
-        start_date : str, optional
+        start_date : str,
             Manual start date in format 'MM-DD-YYYY'. Required if auto='no'.
-        end_date : str, optional
+        end_date : str,
             Manual end date in format 'MM-DD-YYYY'. Required if auto='no'.
 
         Returns
