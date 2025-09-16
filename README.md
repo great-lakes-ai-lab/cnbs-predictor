@@ -61,7 +61,7 @@ On a **Windows** computer, you will need to open the **Anaconda Prompt**.
 
     ```bash
     conda env create -f requirements/environment.yml
-    conda activate cnbs-predictor-env
+    conda activate nbs_env
     ```
 
 3. **Set Up Jupyter Kernel**: Register the Conda environment as a Jupyter kernel.
