@@ -40,14 +40,18 @@ Forecast precipitation, evaporation, and runoff, which are the components net ba
 Before you begin, make sure that the following are installed on your system:
 
 - Conda (Anaconda or Miniconda)
-- Python 3.9+
+- Python 3.11+
 
-### Installation
+### Installation  
+
+On a **Mac**, begin by opening a **Terminal** window.  
+On a **Windows** computer, you can use either **Command Prompt**, **PowerShell**, or (recommended) the **Anaconda Prompt** if you already have Anaconda/Miniconda installed.  
+
 1. **Clone the Repository:** Clone the repository to your target machine.
 
     ```bash
     git clone https://github.com/great-lakes-ai-lab/cnbs-predictor.git
-    cnbs-predictor
+    cd cnbs-predictor
     ```
 
 2. **Set Up the Conda Environment**: Create and activate the Conda environment. 
