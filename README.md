@@ -54,6 +54,8 @@ On a **Windows** computer, you will need to open the **Anaconda Prompt**.
 
     ```bash
     git clone https://github.com/great-lakes-ai-lab/cnbs-predictor.git
+    ```
+    ```bash
     cd cnbs-predictor
     ```
 
@@ -61,6 +63,8 @@ On a **Windows** computer, you will need to open the **Anaconda Prompt**.
 
     ```bash
     conda env create -f requirements/environment.yml
+    ```
+    ```bash
     conda activate nbs_env
     ```
 
