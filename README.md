@@ -10,7 +10,7 @@
 </p>
 
 ## Overview
-Welcome to cnbs-predictor! This software package is designed to forecast key components of Net Basin Supply (NBS) for the Laurentian Great Lakes using atmospheric forecast data. At present, it uses NOAA's Climate Forecast System (CFS) data to forecast precipitation, evaporation, and runoff nine months into the future at monthly intervals.
+Welcome to nbs-predictor! This software package is designed to forecast key components of Net Basin Supply (NBS) for the Laurentian Great Lakes using atmospheric forecast data. At present, it uses NOAA's Climate Forecast System (CFS) data to forecast precipitation, evaporation, and runoff nine months into the future at monthly intervals.
 
 ### Features
 - Advanced Predictive Algorithms: Leverages methods like Gaussian Processes for data-driven forecasting.
