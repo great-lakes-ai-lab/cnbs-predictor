@@ -144,7 +144,7 @@ This project is licensed under the [GNU Affero General Public License Version 3.
 
 ## Acknowledgements
 
-### Contributors / Developers
+#### Contributors
 
 <table>
   <tr>
@@ -177,7 +177,7 @@ This project is licensed under the [GNU Affero General Public License Version 3.
 
 
 
-`nbs-predictor` is powered by institutional collaboration from:
+**nbs-predictor** is powered by institutional collaboration from:
 
 <img src="assets/great-lakes-ai-lab-logo.png" alt="Great Lakes AI Lab Logo" height="100" style="padding-right: 10px;">
 <img src="assets/CIGLR_LOGO.png" alt="Cooperative Institute for Great Lakes Research (CIGLR) Logo" height="100" style="padding-right: 10px;">
