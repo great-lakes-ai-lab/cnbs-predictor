@@ -144,7 +144,40 @@ This project is licensed under the [GNU Affero General Public License Version 3.
 
 ## Acknowledgements
 
-`cnbs-predictor` is powered by institutional collaboration from:
+### Contributors
+
+<table>
+  <tr>
+    <td align="center">
+      <a href="https://github.com/DaniJonesOcean">
+        <img src="./images/dani.jpeg" width="120" alt="Dani"/><br/>
+        <b>Dani Jones</b>
+      </a>
+      <br/>
+      Principle Investigator
+    </td>
+    <td align="center">
+      <a href="https://github.com/lefitzpatrick">
+        <img src="./images/lindsay.jpg" width="120" alt="Lindsay"/><br/>
+        <b>Lindsay Fitzpatrick</b>
+      </a>
+      <br/>
+      Model Developer
+    </td>
+    <td align="center">
+      <a href="https://github.com/mcanearm">
+        <img src="./images/matt.jpeg" width="120" alt="Matt"/><br/>
+        <b>Matt McAnear</b>
+      </a>
+      <br/>
+      Contributor
+    </td>
+  </tr>
+</table>
+
+
+
+**nbs-predictor** is powered by institutional collaboration from:
 
 <img src="assets/great-lakes-ai-lab-logo.png" alt="Great Lakes AI Lab Logo" height="100" style="padding-right: 10px;">
 <img src="assets/CIGLR_LOGO.png" alt="Cooperative Institute for Great Lakes Research (CIGLR) Logo" height="100" style="padding-right: 10px;">

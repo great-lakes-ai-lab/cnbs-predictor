@@ -1,6 +1,7 @@
 import sqlite3
 import os
 import pandas as pd
+import sys
 from datetime import datetime, timedelta, timezone
 from dateutil.relativedelta import relativedelta
 
@@ -223,14 +224,17 @@ class CFSDatabase:
         """
         if auto.lower() == 'yes':
             start_date = self.get_next_run()
-            end_date = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=1)
-        else:
+            end_date = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+        elif auto.lower() == 'no':
             start_date = datetime.strptime(start_date, "%m-%d-%Y")
             end_date = datetime.strptime(end_date, "%m-%d-%Y")
-
+        else:
+            raise ValueError("Invalid value for 'auto'. Please enter 'yes' or 'no'.")
+        
         # Validate dates
         if start_date == end_date:
-            print("The CSV files are up-to-date.")
+            print("The CSV files are up-to-date. Script will exit now.")
+            sys.exit(0)
         elif start_date > end_date:
             raise ValueError("End date cannot be older than start date. Try again.")
         else:
