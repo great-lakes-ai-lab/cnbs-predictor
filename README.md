@@ -146,9 +146,9 @@ This project is licensed under the [GNU Affero General Public License Version 3.
 
 ### Contributors / Developers
 
-| <img src="./images/dani.jpg" width="96" alt="Dani" /> [**Dani Jones**](https://github.com/DaniJonesOcean) | Principle Investigator |
+| <img src="./images/dani.jpeg" width="96" alt="Dani" /> [**Dani Jones**](https://github.com/DaniJonesOcean) | Principle Investigator |
 | <img src="./images/lindsay.jpg" width="96" alt="Lindsay" /> [**Lindsay Fitzpatrick**](https://github.com/lefitzpatrick) | Model developer |
-| <img src="./images/matt.jpg" width="96" alt="Matt" /> [**Matt McAnear**](https://github.com/mcanearm) | Contributor |
+| <img src="./images/matt.jpeg" width="96" alt="Matt" /> [**Matt McAnear**](https://github.com/mcanearm) | Contributor |
 
 
 `nbs-predictor` is powered by institutional collaboration from:
