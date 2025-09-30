@@ -144,7 +144,7 @@ This project is licensed under the [GNU Affero General Public License Version 3.
 
 ## Acknowledgements
 
-#### Contributors
+### Contributors
 
 <table>
   <tr>
