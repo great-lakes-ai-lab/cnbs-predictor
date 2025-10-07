@@ -180,6 +180,8 @@ This project is licensed under the [GNU Affero General Public License Version 3.
       <br/>
       Model Testing
     </td>
+  </tr>
+  <tr>
     <td align="center">
       <a href="https://github.com/pjhopp19">
         <img src="./images/trece.jpeg" width="120" alt="Trece"/><br/>
@@ -197,13 +199,12 @@ This project is licensed under the [GNU Affero General Public License Version 3.
       Contributor
     </td>
     <td align="center">
-      <a href="">
-        <img src="./images/bryan.jpeg" width="120" alt="Bryan"/><br/>
-        <b>Bryan Mroczka</b>
-      </a>
+      <img src="./images/bryan.jpg" width="120" alt="Bryan"/><br/>
+      <b>Bryan Mroczka</b>
       <br/>
       Contributor
     </td>
+    <td></td> <!-- Empty cell to balance 4 columns -->
   </tr>
 </table>
 
