@@ -91,18 +91,10 @@ class CFSProcessor:
         for filename in sorted(os.listdir(download_dir)):
             file = os.path.join(download_dir, filename)
             parts = filename.split('.')
-            forecast = parts[2]
-  
-            # Extract cfs_run as YYYY-MM-DD HH
-            try:
-                cfs_dt = datetime.strptime(forecast, '%Y%m%d%H')
-                cfs_run = cfs_dt.strftime('%Y-%m-%d %H')
-            except ValueError:
-                print(f"Skipping file with invalid cfs_run: {filename}")
-                continue
+            cfs_run = parts[2]
 
-            forecast_year = int(forecast[:4])
-            forecast_month = int(forecast[4:6])
+            forecast_year = int(cfs_run[:4])
+            forecast_month = int(cfs_run[4:6])
             _, num_days = calendar.monthrange(forecast_year, forecast_month)
 
             # ===== Precipitation ===== #
@@ -126,6 +118,7 @@ class CFSProcessor:
                         if lake is None:
                             raise ValueError(f"ERROR: The mask variables need to begin with 'eri', 'ont', 'sup', or 'mih'. Check the mask file.")
 
+                        #print(cfs_run, forecast_year, forecast_year.type, forecast_month, forecast_month.type, lake, surface_type, 'precipitation', pcp_mm.item())
                         self.db.add(cfs_run, forecast_year, forecast_month, lake, surface_type, 'precipitation', pcp_mm.item())
 
                 except Exception as e:

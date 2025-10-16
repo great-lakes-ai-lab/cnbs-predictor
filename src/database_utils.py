@@ -7,14 +7,54 @@ from dateutil.relativedelta import relativedelta
 
 class CFSDatabase:
     def __init__(self, database, table):
+        """
+        Initialize database connection and ensure table exists.
+        """
         self.database = database
         self.table = table
+        self._initialize_database()
+
+    def _initialize_database(self):
+        """
+        Check if the database and table exist; create them if not.
+        """
+        conn = sqlite3.connect(self.database)
+        cursor = conn.cursor()
+
+        # Check if table exists
+        cursor.execute("""
+            SELECT name FROM sqlite_master 
+            WHERE type='table' AND name=?
+        """, (self.table,))
+        exists = cursor.fetchone()
+
+        if not exists:
+            print(f"Creating new database: {self.database}")
+            # Define a simple schema — adjust to your actual needs
+            cursor.execute(f'''
+                CREATE TABLE IF NOT EXISTS {self.table} (
+                cfs_run INTEGER,
+                year INTEGER,
+                month INTEGER,
+                lake TEXT,
+                surface_type TEXT,
+                component TEXT,
+                value REAL,
+                PRIMARY KEY (cfs_run, year, month, lake, surface_type, component)
+            )
+            ''')
+            conn.commit()
+
+        conn.close()
 
     def open(self):
         if not os.path.exists(self.database):
             print(f"Creating new database: {self.database}")
+
         conn = sqlite3.connect(self.database)
         cursor = conn.cursor()
+
+        # Create the table if it doesn't exist
         cursor.execute(f'''
         CREATE TABLE IF NOT EXISTS {self.table} (
             cfs_run INTEGER,
@@ -23,12 +63,26 @@ class CFSDatabase:
             lake TEXT,
             surface_type TEXT,
             component TEXT,
-            "value [mm]" REAL,
+            value REAL,
             PRIMARY KEY (cfs_run, year, month, lake, surface_type, component)
         )
         ''')
         conn.commit()
-        return conn, cursor
+
+        # --- Detect which "value" column exists ---
+        cursor.execute(f"PRAGMA table_info({self.table})")
+        columns = [row[1] for row in cursor.fetchall()]
+
+        if "value [mm]" in columns:
+            self.value_column = "value [mm]"
+        elif "value" in columns:
+            self.value_column = "value"
+        else:
+            raise RuntimeError(
+                f"Neither 'value' nor 'value [mm]' column found in table '{self.table}'."
+            )
+
+        print(f"Connected to {self.table}.")
     
     def load(self):
         # Create a connection to the SQLite database
@@ -49,20 +103,40 @@ class CFSDatabase:
         try:
             conn = sqlite3.connect(self.database)
             cursor = conn.cursor()
+
+            # --- Detect which "value" column exists ---
+            cursor.execute(f"PRAGMA table_info({self.table})")
+            columns = [row[1] for row in cursor.fetchall()]
+            if "value [mm]" in columns:
+                value_col = '"value [mm]"'
+            elif "value" in columns:
+                value_col = "value"
+            else:
+                raise RuntimeError(
+                    f"Neither 'value' nor 'value [mm]' column found in table '{self.table}'."
+                )
+
+            # --- Build query using detected column name ---
             query = f'''
-            SELECT "value [mm]" FROM {self.table}
-            WHERE cfs_run = ? AND year = ? AND month = ? AND lake = ? AND surface_type = ? AND component = ?
+            SELECT {value_col} FROM {self.table}
+            WHERE cfs_run = ? AND year = ? AND month = ? 
+                AND lake = ? AND surface_type = ? AND component = ?
             '''
             cursor.execute(query, (cfs_run, year, month, lake, surface_type, component))
             result = cursor.fetchone()
             conn.close()
+
             if result:
                 return result[0]
             else:
                 print(f"No data found for {locals()}")
                 return None
+
         except sqlite3.Error as e:
             print(f"Database error: {e}")
+            return None
+        except Exception as e:
+            print(f"Error: {e}")
             return None
 
     def add(self, cfs_run, year, month, lake, surface_type, component, value):
@@ -78,7 +152,7 @@ class CFSDatabase:
         lake (str): The lake related to the data.
         surface_type (str): Surface type over 'lake' or 'land'.
         component (str): NBS Component ('precipitation', 'evaporation', 'runoff', or 'cnbs').
-        value (float): The value in millimeters [mm].
+        value (float): The value.
 
         Raises:
         ValueError: If year is not an integer, month is not between 1 and 12, or any other input is invalid.
@@ -100,10 +174,24 @@ class CFSDatabase:
             conn = sqlite3.connect(self.database)
             cursor = conn.cursor()
 
-            # Properly insert the table name using f-string (escaped) or str.format() outside of the SQL statement
+            cursor.execute(f"PRAGMA table_info({self.table})")
+
+            columns = [row[1].strip() for row in cursor.fetchall()]
+
+            # DDouble check which value column exists in the table
+            if "value [mm]" in columns:
+                value_col = '"value [mm]"'
+            elif "value" in columns:
+                value_col = "value"
+            else:
+                raise RuntimeError(
+                    f"Neither 'value' nor 'value [mm]' column found in table '{self.table}'"
+                )
+            
+            # Define the query with the correct value column
             query = f'''
             INSERT OR REPLACE INTO {self.table} (
-                cfs_run, year, month, lake, surface_type, component, "value [mm]"
+                cfs_run, year, month, lake, surface_type, component, {value_col}
             ) VALUES (?, ?, ?, ?, ?, ?, ?)
             '''
 
@@ -123,7 +211,7 @@ class CFSDatabase:
 
         Parameters:
         df (pd.DataFrame): The DataFrame to insert. Must contain the columns:
-                           ['cfs_run', 'year', 'month', 'lake', 'surface_type', 'component', 'value [mm]']
+                           ['cfs_run', 'year', 'month', 'lake', 'surface_type', 'component', 'value']
         if_exists (str): How to behave if the table already exists.
                          Options: 'fail', 'replace', 'append' (default).
         """
@@ -168,7 +256,7 @@ class CFSDatabase:
                 raw_value = str(result[0]).strip()
 
                 # Try parsing with common formats
-                for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H"):
+                for fmt in ("%Y%m%d%H", "%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H"):
                     try:
                         last_run = datetime.strptime(raw_value, fmt)
                         break

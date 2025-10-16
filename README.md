@@ -165,6 +165,32 @@ This project is licensed under the [GNU Affero General Public License Version 3.
       Model Developer
     </td>
     <td align="center">
+      <a href="https://github.com/DeannaApps">
+        <img src="./images/dee.jpeg" width="120" alt="Dee"/><br/>
+        <b>Deanna Fielder</b>
+      </a>
+      <br/>
+      Model Testing
+    </td>
+    <td align="center">
+      <a href="https://github.com/jamiewa139">
+        <img src="./images/jamie.jpeg" width="120" alt="Jamie"/><br/>
+        <b>Jamie Ward</b>
+      </a>
+      <br/>
+      Model Testing
+    </td>
+  </tr>
+  <tr>
+    <td align="center">
+      <a href="https://github.com/pjhopp19">
+        <img src="./images/trece.jpeg" width="120" alt="Trece"/><br/>
+        <b>Trece Bye</b>
+      </a>
+      <br/>
+      Model Testing
+    </td>
+    <td align="center">
       <a href="https://github.com/mcanearm">
         <img src="./images/matt.jpeg" width="120" alt="Matt"/><br/>
         <b>Matt McAnear</b>
@@ -172,6 +198,13 @@ This project is licensed under the [GNU Affero General Public License Version 3.
       <br/>
       Contributor
     </td>
+    <td align="center">
+      <img src="./images/bryan.jpg" width="120" alt="Bryan"/><br/>
+      <b>Bryan Mroczka</b>
+      <br/>
+      Contributor
+    </td>
+    <td></td> <!-- Empty cell to balance 4 columns -->
   </tr>
 </table>
 
