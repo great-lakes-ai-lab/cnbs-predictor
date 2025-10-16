@@ -185,7 +185,7 @@ This project is licensed under the [GNU Affero General Public License Version 3.
     <td align="center">
       <a href="https://github.com/pjhopp19">
         <img src="./images/trece.jpeg" width="120" alt="Trece"/><br/>
-        <b>Jamie Ward</b>
+        <b>Trece Bye</b>
       </a>
       <br/>
       Model Testing

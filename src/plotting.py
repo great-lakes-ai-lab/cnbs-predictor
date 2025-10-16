@@ -8,7 +8,7 @@ import matplotlib.dates as mdates
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
-def plot_forecast(df, filename="forecast/CNBS_forecasts.png"):
+def plot_forecast(df, filename=None):
     """
     Static Matplotlib plot for Great Lakes CNBS forecasts.
     
@@ -18,10 +18,8 @@ def plot_forecast(df, filename="forecast/CNBS_forecasts.png"):
         Pivoted dataframe with columns:
         ["cfs_run", "forecast_month", "model", "lake", "precipitation", "evaporation", "runoff", "nbs"]
     filename : str, optional
-        Path to save the PNG. Defaults to 'forecast/CNBS_forecasts.png'.
+        Path to save the PNG. If None, the plot is displayed only and not saved.
     """
-    # Ensure output folder exists
-    os.makedirs(os.path.dirname(filename), exist_ok=True)
 
     df = df.copy()
     df["date"] = pd.to_datetime(df["forecast_month"], format="%Y-%m")
@@ -115,7 +113,12 @@ def plot_forecast(df, filename="forecast/CNBS_forecasts.png"):
     axs[0, 3].legend(loc='lower left', bbox_to_anchor=(1, 0.04), fontsize=12)
 
     plt.tight_layout()
-    plt.savefig(filename)
+
+    # Save only if filename is provided
+    if filename:
+        os.makedirs(os.path.dirname(filename), exist_ok=True)
+        plt.savefig(filename, bbox_inches='tight')
+
     plt.show()
 
 
