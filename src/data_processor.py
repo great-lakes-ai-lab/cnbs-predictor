@@ -93,8 +93,8 @@ class CFSProcessor:
             parts = filename.split('.')
             cfs_run = parts[2]
 
-            forecast_year = int(cfs_run[:4])
-            forecast_month = int(cfs_run[4:6])
+            forecast_year = int(parts[3][:4])
+            forecast_month = int(parts[3][4:6])
             _, num_days = calendar.monthrange(forecast_year, forecast_month)
 
             # ===== Precipitation ===== #
@@ -118,7 +118,6 @@ class CFSProcessor:
                         if lake is None:
                             raise ValueError(f"ERROR: The mask variables need to begin with 'eri', 'ont', 'sup', or 'mih'. Check the mask file.")
 
-                        #print(cfs_run, forecast_year, forecast_year.type, forecast_month, forecast_month.type, lake, surface_type, 'precipitation', pcp_mm.item())
                         self.db.add(cfs_run, forecast_year, forecast_month, lake, surface_type, 'precipitation', pcp_mm.item())
 
                 except Exception as e:
