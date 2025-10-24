@@ -241,7 +241,7 @@ class CFSProcessor:
         Returns:
             pd.DataFrame: Transformed wide-format DataFrame with dummy-encoded init months.
         """
-        data['cfs_run'] = pd.to_datetime(data['cfs_run'], format='%Y-%m-%d %H')
+        data['cfs_run'] = pd.to_datetime(data['cfs_run'], format='%Y%m%d%H')
 
         # Create a datetime column from the 'year' and 'month' columns (set day to 1)
         data['forecast_date'] = pd.to_datetime(dict(year=data['year'], month=data['month'], day=1))

@@ -141,69 +141,81 @@ class CFSDatabase:
 
     def add(self, cfs_run, year, month, lake, surface_type, component, value):
         """
-        Adds a record to the specified database table using SQLite, inserting or replacing based on primary key.
+        Safely adds or replaces a record in the database table using SQLite.
 
         Parameters:
-        database (str): Path to the database file.
-        table (str): Name of the table where the data should be inserted.
-        cfs_run (str): The CFS run identifier.
-        year (int): Forecast year (2024, 2025, etc.).
-        month (int): Forecast month (should be between 1 and 12).
-        lake (str): The lake related to the data.
-        surface_type (str): Surface type over 'lake' or 'land'.
-        component (str): NBS Component ('precipitation', 'evaporation', 'runoff', or 'cnbs').
-        value (float): The value.
+            cfs_run (str): The CFS run identifier (YYYYMMDDHH).
+            year (int): Forecast year (e.g., 2024, 2025).
+            month (int): Forecast month (1–12).
+            lake (str): Lake name.
+            surface_type (str): Surface type ('lake' or 'land').
+            component (str): NBS Component ('precipitation', 'evaporation', 'runoff', 'cnbs').
+            value (float): Data value.
 
         Raises:
-        ValueError: If year is not an integer, month is not between 1 and 12, or any other input is invalid.
-        sqlite3.DatabaseError: If there is an error interacting with the database.
+            ValueError: For invalid parameter types or ranges.
+            sqlite3.DatabaseError: For database interaction errors.
         """
 
-        # Input validation
+        import time
+        import sqlite3
+
+        # --- Input validation ---
         if not isinstance(year, int):
-            raise ValueError(f"ERROR: Year must be an integer.")
+            raise ValueError("ERROR: Year must be an integer.")
         if not (1 <= month <= 12):
-            raise ValueError(f"ERROR: Month must be between 1 and 12.")
-        if not isinstance(cfs_run, str) or not isinstance(lake, str) or not isinstance(surface_type, str) or not isinstance(component, str):
-            raise ValueError("ERROR: cfs_run, lake, surface type, and CNBS must be strings.")
+            raise ValueError("ERROR: Month must be between 1 and 12.")
+        if not all(isinstance(v, str) for v in [cfs_run, lake, surface_type, component]):
+            raise ValueError("ERROR: cfs_run, lake, surface_type, and component must be strings.")
         if not isinstance(value, (float, int)):
-            raise ValueError(f"ERROR: Value must be a numeric type.")
+            raise ValueError("ERROR: Value must be numeric.")
 
-        try:
-            # Connect to the database
-            conn = sqlite3.connect(self.database)
-            cursor = conn.cursor()
+        max_retries = 5
+        retry_delay = 3  # seconds
 
-            cursor.execute(f"PRAGMA table_info({self.table})")
+        for attempt in range(1, max_retries + 1):
+            try:
+                # Use context manager for safe connection handling
+                with sqlite3.connect(self.database, timeout=30) as conn:
+                    conn.execute("PRAGMA journal_mode=WAL;")  # allows concurrent reads
+                    cursor = conn.cursor()
 
-            columns = [row[1].strip() for row in cursor.fetchall()]
+                    # Get table columns to find correct value column
+                    cursor.execute(f"PRAGMA table_info({self.table})")
+                    columns = [row[1].strip() for row in cursor.fetchall()]
 
-            # DDouble check which value column exists in the table
-            if "value [mm]" in columns:
-                value_col = '"value [mm]"'
-            elif "value" in columns:
-                value_col = "value"
-            else:
-                raise RuntimeError(
-                    f"Neither 'value' nor 'value [mm]' column found in table '{self.table}'"
-                )
-            
-            # Define the query with the correct value column
-            query = f'''
-            INSERT OR REPLACE INTO {self.table} (
-                cfs_run, year, month, lake, surface_type, component, {value_col}
-            ) VALUES (?, ?, ?, ?, ?, ?, ?)
-            '''
+                    if "value [mm]" in columns:
+                        value_col = '"value [mm]"'
+                    elif "value" in columns:
+                        value_col = "value"
+                    else:
+                        raise RuntimeError(
+                            f"Neither 'value' nor 'value [mm]' column found in table '{self.table}'"
+                        )
 
-            # Insert the data into the table
-            cursor.execute(query, (cfs_run, year, month, lake, surface_type, component, value))
+                    # Insert or replace record
+                    query = f"""
+                    INSERT OR REPLACE INTO {self.table} (
+                        cfs_run, year, month, lake, surface_type, component, {value_col}
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """
+                    cursor.execute(query, (cfs_run, year, month, lake, surface_type, component, value))
+                    conn.commit()
+                return  # ✅ success — exit early
 
-            # Commit the transaction and close the connection
-            conn.commit()
-            conn.close()
+            except sqlite3.OperationalError as e:
+                # Handle transient locking or “readonly” issues
+                if "locked" in str(e).lower() or "readonly" in str(e).lower():
+                    print(f"Database busy or locked (attempt {attempt}/{max_retries}). Retrying in {retry_delay}s...")
+                    time.sleep(retry_delay)
+                    continue
+                else:
+                    raise sqlite3.DatabaseError(f"Database error occurred: {e}")
+            except sqlite3.DatabaseError as e:
+                raise sqlite3.DatabaseError(f"Database error occurred: {e}")
 
-        except sqlite3.DatabaseError as e:
-            raise sqlite3.DatabaseError(f"Database error occurred: {e}")
+        print(f"Failed to write record after {max_retries} attempts — skipping forecast.")
+
         
     def add_df(self, df, if_exists="append"):
         """
@@ -288,7 +300,7 @@ class CFSDatabase:
         except (sqlite3.Error, ValueError) as e:
             print(f"WARNING: {e}")
             # Fallback: first of the month, 9 months ago at midnight UTC
-            now_utc = datetime.now(timezone.utc)
+            now_utc = datetime.utcnow().replace(tzinfo=None)
             nine_months_ago = now_utc.replace(day=1, hour=0, minute=0, second=0, microsecond=0) - relativedelta(months=9)
             return nine_months_ago  # datetime object at midnight
 
