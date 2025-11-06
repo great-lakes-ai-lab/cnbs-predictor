@@ -131,7 +131,7 @@ class DataLoader:
 
         return df
 
-    def lake_probabilities(self, file_dir,units = "cms"):
+    def lake_probabilities(self, file_dir, units = "cms"):
         """
         Load and merge probability data for the Great Lakes.
 
