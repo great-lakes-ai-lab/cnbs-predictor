@@ -6,7 +6,7 @@ channels:
 dependencies:
   - python==3.12.3
   - scipy
-  - scikit-learn
+  - scikit-learn==1.7.0
   - beautifulsoup4
   - boto3
   - botocore
@@ -14,7 +14,7 @@ dependencies:
   - pandas
   - netcdf4
   - numpy
-  - joblib
+  - joblib==1.5.2
   - jupyter
   - jupyterlab
   - ipykernel
@@ -42,6 +42,6 @@ dependencies:
       - markdown-it-py
       - tensorboard
       - tensorboard-data-server
-      - tensorflow
-      - tensorflow-intel
+      - tensorflow==2.20.0
+      - tensorflow-intel==0.0.1
       - termcolor
