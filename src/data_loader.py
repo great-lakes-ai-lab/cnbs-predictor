@@ -131,27 +131,55 @@ class DataLoader:
 
         return df
 
-    def lake_probabilities(self, file_dir, units = "cms"):
+    def lake_probabilities(self, file_dir, units="cms"):
         """
-        Load and merge probability data for the Great Lakes.
+        Reads probability of exceedance data for multiple Great Lakes from CSV files,
+        converts units if requested, and combines them into a single tidy (long-format) DataFrame.
+
+        Each input CSV contains probability of exceedance values (0.99–0.01)
+        for 12 monthly columns (Jan–Dec). The function reshapes and merges all
+        lakes into one DataFrame suitable for analysis or plotting.
 
         Parameters
         ----------
         file_dir : str
-            Directory containing the probability CSV files (e.g., '.../data/probabilities/').
-        units : str, optional
-            Units for output values. 
-            Options:
-            - 'cms' (default): keep values as discharge (m³/s)
-            - 'mm' : convert to lake-equivalent depth (mm/month)
+            Path to the directory containing the lake probability CSV files.
+            Expected files are:
+            - SUP.probs.csv  (Lake Superior)
+            - MIH.probs.csv  (Lakes Michigan-Huron)
+            - ERI.probs.csv  (Lake Erie)
+            - ONT.probs.csv  (Lake Ontario)
+
+        units : str, optional, default="cms"
+            Desired output units for flow values.
+            - "cms" : cubic meters per second (original units from source files)
+            - "mm"  : millimeters per month, computed using lake surface area
+                    and number of days in each month.
 
         Returns
         -------
-        pd.DataFrame
-            DataFrame with columns: ['month', 'superior', 'michigan-huron', 'erie', 'ontario'].
+        pandas.DataFrame
+            A tidy DataFrame containing columns:
+            - "month" : str, calendar month (Jan–Dec)
+            - "lake" : str, lake name ("superior", "michigan-huron", "erie", "ontario")
+            - "prob_exceedance" : float, probability of exceedance (0.99–0.01)
+            - "value" : float, flow or equivalent value in chosen units
+
+        Notes
+        -----
+        - When units="mm", values are converted from m³/s to mm/month using:
+            value_mm = value_cms * 1000 * 86400 * days_in_month / lake_area
+            where lake_area is the surface area of each lake in m².
+        - Input CSVs are assumed to have 7 header rows before the data block,
+        and contain a column named "Probability Of Exceedance".
+
+        Example
+        -------
+        >>> df = combine_lake_probabilities("/path/to/files/", units="mm")
+        >>> df.query("lake == 'erie' and month == 'Jan'")
         """
 
-        # Lake files
+        # --- Lake file mapping and surface areas (m²) ---
         lake_files = {
             "superior": "SUP.probs.csv",
             "michigan-huron": "MIH.probs.csv",
@@ -167,37 +195,46 @@ class DataLoader:
 
         # --- Internal helper to process each lake file ---
         def process_lake(filepath, lake_name):
+            """
+            Reads and reshapes one lake's probability of exceedance data.
+            """
+            # Read file, skipping header lines
             df = pd.read_csv(filepath, skiprows=7)
-            filtered = df[df["Probability Of Exceedance"] == 0.5]
 
-            lake_df = (
-                filtered.drop(columns=["Probability Of Exceedance"])
-                .T
-                .rename(columns={filtered.index[0]: lake_name})
-                .reset_index()
-                .rename(columns={"index": "month"})
-            )
+            # Extract probability levels and remove the column
+            prob_values = df["Probability Of Exceedance"]
+            df = df.drop(columns=["Probability Of Exceedance"])
 
-            # Optional unit conversion: m³/s → mm/month
+            # Transpose: make months rows, probabilities columns
+            df_t = df.T
+            df_t.columns = prob_values
+            df_t = df_t.reset_index().rename(columns={"index": "month"})
+
+            # Optional conversion to mm/month
             if units.lower() == "mm":
                 area = lake_areas[lake_name]
-                # Conversion factor: m³/s → mm/month
-                # 1 m³/s = (1 / area) m/s over lake surface
-                # Convert m → mm (×1000) and seconds → days × 86400
-                lake_df[lake_name] = lake_df.apply(
-                    lambda row: row[lake_name] * 1000 * 86400 * days_in_month.get(row["month"], 30) / area,
-                    axis=1
-                )
+                for col in prob_values:
+                    df_t[col] = df_t.apply(
+                        lambda row: row[col] * 1000 * 86400 * days_in_month.get(row["month"], 30) / area,
+                        axis=1
+                    )
 
-            return lake_df
+            # Reshape to long (tidy) format
+            df_long = df_t.melt(id_vars=["month"], var_name="prob_exceedance", value_name="value")
+            df_long["lake"] = lake_name
+            return df_long
 
-        # --- Process and merge all ---
-        merged_df = None
+        # --- Process and combine all lakes ---
+        all_lakes = []
         for lake, filename in lake_files.items():
             lake_df = process_lake(file_dir + filename, lake)
-            if merged_df is None:
-                merged_df = lake_df
-            else:
-                merged_df = merged_df.merge(lake_df, on="month")
+            all_lakes.append(lake_df)
 
+        merged_df = pd.concat(all_lakes, ignore_index=True)
+
+        # Clean and reorder
+        merged_df["prob_exceedance"] = merged_df["prob_exceedance"].astype(float)
+        merged_df = merged_df.sort_values(["lake", "prob_exceedance"]).reset_index(drop=True)
+        merged_df = merged_df[["month", "lake", "prob_exceedance", "value"]]
+        
         return merged_df

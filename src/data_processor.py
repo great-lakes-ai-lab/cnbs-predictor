@@ -472,3 +472,68 @@ class ForecastTransformer:
         df = df[df['forecast_month'] >= min_date]
         df['forecast_month'] = df['forecast_month'].dt.to_period('M').astype(str)
         return df
+
+@staticmethod
+def align_prob_with_start_date(merged_df, start_date):
+    """
+    Aligns the months in a lake probability DataFrame to a specified start date,
+    creating a continuous datetime index beginning at that month.
+
+    Parameters
+    ----------
+    merged_df : pd.DataFrame
+        DataFrame containing at least the columns:
+        - 'month' (str): three-letter month abbreviation ("Jan"–"Dec")
+        - optionally 'month_num' and 'year' (they will be rebuilt if missing)
+    start_date : str
+        Start date in "YYYY-MM" format (e.g., "2025-11").
+        The resulting index will begin at this month.
+
+    Returns
+    -------
+    pd.DataFrame
+        Copy of merged_df with an added 'date' column (and datetime index)
+        spanning one full 12-month cycle starting from `start_date`.
+        The DataFrame is sorted chronologically by this new index.
+
+    Example
+    -------
+    >>> prob_aligned = align_prob_with_start_date(prob, "2025-11")
+    >>> prob_aligned.query("lake == 'erie'").head()
+               month   lake  prob_exceedance     value
+    date
+    2025-11-01   Nov   erie              0.5   85.4
+    2025-12-01   Dec   erie              0.5  102.2
+    2026-01-01   Jan   erie              0.5  125.8
+    """
+    df = merged_df.copy()
+
+    # Define month mapping
+    month_order = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]
+    month_to_num = {m: i + 1 for i, m in enumerate(month_order)}
+
+    # Add month number if missing
+    if "month_num" not in df.columns:
+        df["month_num"] = df["month"].map(month_to_num)
+
+    # Parse the start date (e.g., 2025-11 → year=2025, month=11)
+    start_year, start_month = map(int, start_date.split("-"))
+
+    # Compute year assignment for each month
+    # Months >= start_month → same year, months < start_month → next year
+    df["year"] = df["month_num"].apply(
+        lambda m: start_year if m >= start_month else start_year + 1
+    )
+
+    # Build datetime column
+    df["date"] = pd.to_datetime(
+        dict(year=df["year"], month=df["month_num"], day=1)
+    )
+
+    # Sort chronologically and set index
+    df = df.sort_values(["lake", "date"]).set_index("date")
+
+    # Drop helper columns
+    df = df.drop(columns=["month_num", "year"], errors="ignore").reset_index()
+    
+    return df
