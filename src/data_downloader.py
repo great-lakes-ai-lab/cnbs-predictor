@@ -362,55 +362,118 @@ class SSTDownloader:
 
         return df
 
-    def all_glsea(self, url, units='K'):
+    def all_glsea(self, url, units='K', climatology_csv=None, start_date=None, end_date=None):
         """
-        Fetch all daily lake surface water temperatures from a NOAA GLSEA .dat file URL.
+        Fetch daily lake surface water temperatures from a NOAA GLSEA .dat file URL.
+        Checks for missing data within the specified period (default = last 9 months)
+        and fills missing values using climatology if provided, otherwise with NaN.
 
         Parameters
         ----------
         url : str
             The URL of the .dat file (GLSEA daily data).
+        climatology_csv : str or None, optional
+            Path to a CSV file with mean climatological SSTs for each day of year.
+            Must contain columns: ['dayofyear', 'superior_sst', 'michigan-huron_sst', 'erie_sst', 'ontario_sst'].
+            If None, missing values are filled with NaN.
         units : str, optional
             Unit system for output. 'C' for Celsius, 'K' for Kelvin. Default is 'K'.
+        start_date : str or pd.Timestamp, optional
+            Start of the date range to verify. Format 'YYYY-MM-DD'.
+            If None, defaults to 9 months before yesterday.
+        end_date : str or pd.Timestamp, optional
+            End of the date range to verify. Format 'YYYY-MM-DD'.
+            If None, defaults to yesterday.
 
         Returns
         -------
         pd.DataFrame
-            A DataFrame with Date, Superior, Michigan-Huron, Erie, Ontario columns.
-            Returns None if the URL is not accessible.
+            A DataFrame with a daily Date index and SST columns for each lake.
+            Missing dates are filled using climatology if available, otherwise NaN.
         """
+        # --- Check URL availability ---
         if not check_url_exists(url):
             print(f"URL does not exist or is not reachable: {url}")
             return None
 
-        # Download full file
+        # --- Download and parse NOAA GLSEA data ---
         response = requests.get(url)
         response.raise_for_status()
         text_data = response.text
 
-        # Filter lines that start with a digit (data lines)
+        # Keep only numeric data lines
         lines = text_data.strip().split("\n")
         data_lines = [line for line in lines if line.strip() and line[0].isdigit()]
         full_data = "\n".join(data_lines)
 
-        # Column names from NOAA format
-        col_names = ["year", "day", "superior_sst", "michigan_sst", "huron_sst", "erie_sst", "ontario_sst", "stclair_sst"]
-
-        # Read all rows into DataFrame
+        # NOAA column names
+        col_names = ["year", "day", "superior_sst", "michigan_sst", "huron_sst",
+                    "erie_sst", "ontario_sst", "stclair_sst"]
         df = pd.read_csv(StringIO(full_data), sep=r"\s+", names=col_names)
 
-        # Date conversion from year + Julian day
+        # Convert to datetime
         df["Date"] = pd.to_datetime(df["year"].astype(str) + df["day"].astype(str), format="%Y%j")
 
-        # Michigan-Huron average
+        # Merge Michigan & Huron into a single mean value
         df["michigan-huron_sst"] = df[["michigan_sst", "huron_sst"]].mean(axis=1)
 
-        # Select and optionally convert units
+        # Keep the four Great Lakes
         df = df.set_index("Date")[["superior_sst", "michigan-huron_sst", "erie_sst", "ontario_sst"]]
 
+        # --- Unit conversion ---
         if units.upper() == "K":
             df = df + 273.15
         elif units.upper() != "C":
             raise ValueError("Unsupported units. Use 'C' for Celsius or 'K' for Kelvin.")
 
-        return df
+        # --- Determine the date range ---
+        if end_date is None:
+            end_date = pd.Timestamp(datetime.now().date() - timedelta(days=1))
+        else:
+            end_date = pd.Timestamp(end_date)
+
+        if start_date is None:
+            start_date = end_date - pd.DateOffset(months=9)
+        else:
+            start_date = pd.Timestamp(start_date)
+
+        # --- Subset available data ---
+        df_period = df.loc[(df.index >= start_date) & (df.index <= end_date)]
+
+        # --- Generate full daily index ---
+        full_index = pd.date_range(start=start_date, end=end_date, freq="D")
+        missing_dates = full_index.difference(df_period.index)
+
+        # --- Handle missing data ---
+        if not missing_dates.empty:
+            print(f"⚠️ Warning: Missing {len(missing_dates)} days between {start_date.date()} and {end_date.date()}.")
+
+            if climatology_csv:
+                print("Filling missing values using climatology data.")
+                clim = pd.read_csv(climatology_csv, sep='\t')
+                if "dayofyear" not in clim.columns:
+                    raise ValueError("Climatology CSV must have a 'dayofyear' column.")
+                clim = clim.set_index("dayofyear")
+
+                fill_df = pd.DataFrame(index=missing_dates)
+                fill_df["dayofyear"] = fill_df.index.dayofyear
+
+                for col in df_period.columns:
+                    fill_df[col] = fill_df["dayofyear"].map(clim[col])
+
+                fill_df = fill_df.drop(columns="dayofyear")
+            else:
+                print("No climatology file provided — filling missing days with NaN.")
+                # Create NaN DataFrame but preserve column dtypes
+                fill_df = pd.DataFrame(index=missing_dates)
+                for col in df_period.columns:
+                    fill_df[col] = np.nan
+                    fill_df[col] = fill_df[col].astype(df_period[col].dtype)
+
+            # Merge and sort
+            df_period = pd.concat([df_period, fill_df]).sort_index()
+
+        # --- Reindex to ensure continuous range ---
+        df_period = df_period.reindex(full_index)
+
+        return df_period
