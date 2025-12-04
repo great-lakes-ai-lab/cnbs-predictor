@@ -13,7 +13,7 @@ lake_areas = {
 
 class DataLoader:
     def __init__(self):
-        pass  # Add config or default paths here if needed
+        pass
 
     def glcc(self, directory, units='cms'):
         """
