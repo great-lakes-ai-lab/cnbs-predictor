@@ -228,10 +228,10 @@ class CFSDatabase:
                          Options: 'fail', 'replace', 'append' (default).
         """
 
-        required_cols = ['cfs_run', 'forecast_month', 'model', 'lake', 'precipitation', 'evaporation', 'runoff', 'nbs']
-        missing_cols = [col for col in required_cols if col not in df.columns]
-        if missing_cols:
-            raise ValueError(f"Missing required columns in DataFrame: {missing_cols}")
+        #required_cols = ['cfs_run', 'forecast_month', 'model', 'lake', 'precipitation', 'evaporation', 'runoff', 'nbs']
+        #missing_cols = [col for col in required_cols if col not in df.columns]
+        #if missing_cols:
+        #    raise ValueError(f"Missing required columns in DataFrame: {missing_cols}")
 
         try:
             conn = sqlite3.connect(self.database)
@@ -242,7 +242,7 @@ class CFSDatabase:
             conn.close()
         except sqlite3.DatabaseError as e:
             raise sqlite3.DatabaseError(f"Database error occurred while inserting DataFrame: {e}")
-        
+
     def get_next_run(self):
         try:
             conn = sqlite3.connect(self.database)
