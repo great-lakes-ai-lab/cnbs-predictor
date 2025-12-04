@@ -1,6 +1,7 @@
 import requests
 from datetime import datetime
 import pandas as pd
+import os
 
 def check_url_exists(url):
     """
@@ -100,3 +101,29 @@ def get_date_range(db=None, auto='yes', start_date=None, end_date=None):
     date_array = pd.date_range(start=start_date, end=end_date, freq='1d')
     
     return start_date, end_date, date_array
+
+def create_directory(directory):
+        """Create a directory if it doesn't already exist."""
+        try:
+            if not os.path.exists(directory):
+                os.makedirs(directory)
+                print(f"Directory '{directory}' created.")
+            else:
+                print(f"Directory '{directory}' already exists.")
+        except PermissionError:
+            print(f"Permission denied: Unable to create the directory '{directory}'.")
+        except Exception as e:
+            print(f"ERROR occurred while creating the directory '{directory}': {e}")
+
+def get_files(directory, affix, identifier):
+        """
+        Get a list of all files in the specified directory that match the given prefix or suffix.
+        """
+        files = []
+        for file_name in os.listdir(directory):
+            if affix == 'suffix':
+                if file_name.endswith(identifier):
+                    files.append(os.path.join(directory, file_name))
+            elif affix == 'prefix':
+                if file_name.startswith(identifier):
+                    files.append(os.path.join(directory, file_name))
