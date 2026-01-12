@@ -120,19 +120,9 @@ cnbs-predictor/
 ├── requirements                                # Conda environment requirements
 ├── ROADMAP.md                                  # Release schedule and CI/CD implementation plan
 ├── src                                         # Source code for data processing and utilities
-│   ├── __init__.py                             # Package Initialization
-│   ├── data_downloader.py                      # Functions for downloading data
-│   ├── data_loader.py                          # Functions for loading data from the data folder
-│   ├── data_processor.py                       # Functions to process data
-│   ├── database_utils.py                       # Fucntions for loading and saving data from the database
-│   ├── hydro_utils.py                          # Utility functions for hydrology 
-│   ├── plotting.py                             # Functions for simple plotting of data
-│   └── utilities.py                            # Other basic utility functions
-└── tests                                       # Unit tests for the codebase
-    ├── integration                             # Tests for integration (coming soon)
-    └── unit                                    # Contains unit test
-        ├── __init__.py                         # Package Initialization
-        └── test_data_inputs.py                 # Unit tests to check for data availability and inputs
+└── tests                                       # Tests for the codebase
+    ├── integration                             # Integration tests for testing multiple components
+    └── unit                                    # Unit tests for quick testing of functions and data availability
 ```
 
 ## Contributing
