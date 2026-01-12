@@ -22,49 +22,6 @@ class CFSProcessor:
         self.table = table
         self.db = CFSDatabase(database, table)
 
-    def create_directory(directory):
-        """Create a directory if it doesn't already exist."""
-        try:
-            if not os.path.exists(directory):
-                os.makedirs(directory)
-                print(f"Directory '{directory}' created.")
-            else:
-                print(f"Directory '{directory}' already exists.")
-        except PermissionError:
-            print(f"Permission denied: Unable to create the directory '{directory}'.")
-        except Exception as e:
-            print(f"ERROR occurred while creating the directory '{directory}': {e}")
-
-    def get_files(directory, affix, identifier):
-        """
-        Get a list of all files in the specified directory that match the given prefix or suffix.
-        """
-        files = []
-        for file_name in os.listdir(directory):
-            if affix == 'suffix':
-                if file_name.endswith(identifier):
-                    files.append(os.path.join(directory, file_name))
-            elif affix == 'prefix':
-                if file_name.startswith(identifier):
-                    files.append(os.path.join(directory, file_name))
-        return files
-
-    def shift_variables(df, lag=0, lead=0):
-        """
-        Create variables columns to include lags and leads.
-        """
-        df = df.copy()
-        new_columns = []
-        for column in df.columns:
-            for lag_month in range(1, lag):
-                new_columns.append(df[column].shift(lag_month).rename(f'{column}_mo-{lag_month}'))
-            for lead_month in range(1, lead):
-                new_columns.append(df[column].shift(-lead_month).rename(f'{column}_mo{lead_month}'))
-        df_shifted = pd.concat([df] + new_columns, axis=1)
-        df_shifted.rename(columns={col: f"{col}_mo0" for col in df.columns}, inplace=True)
-        df_shifted = df_shifted.dropna()
-        return df_shifted
-
     def process_files(self, download_dir, mask_file, mask_variables):
         """
         Process GRIB files for a CFS run and insert extracted data into the database.
@@ -190,9 +147,59 @@ class CFSProcessor:
             else:
                 print(f"Skipping unrecognized file: {filename}")
                 continue
+
+class CFSTransformer:
+    def __init__(self, df):
+        """
+        Initialize the transformer with a pandas DataFrame.
+        """
+        if not isinstance(df, pd.DataFrame):
+            raise ValueError("Input must be a pandas DataFrame.")
+        self.df = df.copy()
+
+    def shift_variables(self, lag=0, lead=0):
+        """
+        Create variables columns to include lags and leads.
+        """
+        df = self.df.copy()
+        new_columns = []
+        for column in df.columns:
+            for lag_month in range(1, lag):
+                new_columns.append(df[column].shift(lag_month).rename(f'{column}_mo-{lag_month}'))
+            for lead_month in range(1, lead):
+                new_columns.append(df[column].shift(-lead_month).rename(f'{column}_mo{lead_month}'))
+        df_shifted = pd.concat([df] + new_columns, axis=1)
+        df_shifted.rename(columns={col: f"{col}_mo0" for col in df.columns}, inplace=True)
+        df_shifted = df_shifted.dropna()
+        return df_shifted
     
-    @staticmethod
-    def shift_variables(df, lag=0, lead=0):
+    def filter(self, first_forecast_month, months_back=10):
+        """
+        Filters rows based on cfs_run after going back a given number of months
+        from the first forecast month.
+
+        Parameters:
+            first_forecast_month (str): YYYY-MM, e.g., '2025-12'
+            months_back (int): number of months to go back
+        """
+        df = self.df.copy()
+
+        # Convert cfs_run to datetime if not already
+        if not pd.api.types.is_datetime64_any_dtype(df["cfs_run"]):
+            df["cfs_run"] = pd.to_datetime(df["cfs_run"], format="%Y%m%d%H")
+
+        # Convert first_forecast_month to datetime (set day=1)
+        first_fc_date = pd.to_datetime(first_forecast_month + "-01")
+
+        # Subtract months_back months
+        start_date = first_fc_date - pd.DateOffset(months=months_back)
+
+        # Keep only rows with cfs_run >= start_date
+        df_filtered = df[df["cfs_run"] >= start_date]
+
+        return df_filtered
+
+    def shift_variables(self, lag=0, lead=0):
         """
         Create the variables columns to include lags (last month values) and lead variables
         
@@ -204,7 +211,7 @@ class CFSProcessor:
         Returns:
         - pd.DataFrame: The DataFrame with added variable columns for lags and leading.
         """
-        df = df.copy()  # To avoid modifying the original DataFrame
+        df = self.df.copy()  # To avoid modifying the original DataFrame
 
         new_columns = []  # List to store the new lag and lead columns
 
@@ -227,8 +234,7 @@ class CFSProcessor:
 
         return df_shifted
 
-    @staticmethod
-    def structure_input(data):
+    def structure_input(self):
         """
         Transforms a long-format CFS forecast DataFrame into a wide-format one,
         with one column per lake/surface/component/forecast_month combination,
@@ -241,6 +247,8 @@ class CFSProcessor:
         Returns:
             pd.DataFrame: Transformed wide-format DataFrame with dummy-encoded init months.
         """
+        data = self.df.copy()
+        # Convert 'cfs_run' to datetime
         data['cfs_run'] = pd.to_datetime(data['cfs_run'], format='%Y%m%d%H')
 
         # Create a datetime column from the 'year' and 'month' columns (set day to 1)
@@ -250,7 +258,7 @@ class CFSProcessor:
         data['forecast_month'] = (data['forecast_date'].dt.year - data['cfs_run'].dt.year) * 12 + \
                             (data['forecast_date'].dt.month - data['cfs_run'].dt.month)
 
-        # Drop the intermediate column if you don't need it
+        # Drop the intermediate column
         data.drop(columns='forecast_date', inplace=True)
 
         # Create column names
@@ -423,6 +431,7 @@ class ForecastTransformer:
         gets its own column with forecast_month calculated.
         """
         df = self.df.copy()
+        df["cfs_run"] = pd.to_datetime(df["cfs_run"], format ="%Y%m%d%H")
 
         # Step 1: Melt into long format
         df_melted = df.melt(
@@ -455,23 +464,57 @@ class ForecastTransformer:
         # Step 5: Reorder columns if expected vars exist
         expected_vars = ["precipitation", "evaporation", "runoff", "nbs"]
         cols = ["cfs_run", "forecast_month", "model", "lake"] + [v for v in expected_vars if v in df_tidy.columns]
-        df_reordered = df_tidy[cols]
+        df_final = df_tidy[cols]
 
-        df_final = df_reordered
+        # Convert cfs_run back to YYYYMMDDHH format
+        df_final["cfs_run"] = pd.to_datetime(df_final["cfs_run"]).dt.strftime("%Y%m%d%H")
 
         return df_final
 
 
     def filter(self, first_forecast_month):
         """
-        Filters rows where forecast_month is greater than or equal to a minimum (YYYY-MM).
+        Filters rows to keep the first forecast month >= first_forecast_month
+        and all subsequent months.
+        
+        Works whether dataframe has 'forecast_month' (YYYY-MM) or 'year' + 'month'.
         """
         df = self.df.copy()
-        df['forecast_month'] = pd.to_datetime(df['forecast_month'], format="%Y-%m")
-        min_date = pd.to_datetime(first_forecast_month, format="%Y-%m")
-        df = df[df['forecast_month'] >= min_date]
-        df['forecast_month'] = df['forecast_month'].dt.to_period('M').astype(str)
-        return df
+
+        # Convert threshold to a Period
+        min_period = pd.Period(first_forecast_month, freq="M")
+
+        if "forecast_month" in df.columns:
+            # Convert to Period
+            df["forecast_month"] = pd.to_datetime(df["forecast_month"], format="%Y-%m").dt.to_period("M")
+
+            # Find the first forecast month >= threshold
+            first_month_in_data = df["forecast_month"].min()
+            first_month_to_keep = max(first_month_in_data, min_period)
+
+            # Keep rows >= that first month
+            df = df[df["forecast_month"] >= first_month_to_keep]
+
+            # Convert back to string YYYY-MM if needed
+            df["forecast_month"] = df["forecast_month"].astype(str)
+            return df
+
+        elif "year" in df.columns and "month" in df.columns:
+            # Build Period
+            df["forecast_period"] = df.apply(lambda r: pd.Period(f"{r.year}-{r.month:02d}", freq="M"), axis=1)
+
+            first_month_in_data = df["forecast_period"].min()
+            first_month_to_keep = max(first_month_in_data, min_period)
+
+            df = df[df["forecast_period"] >= first_month_to_keep]
+
+            # Optionally drop helper column
+            df = df.drop(columns=["forecast_period"])
+            return df
+
+        else:
+            raise ValueError("Dataframe must contain either 'forecast_month' or ('year','month') columns.")
+
 
 @staticmethod
 def align_prob_with_start_date(merged_df, start_date):

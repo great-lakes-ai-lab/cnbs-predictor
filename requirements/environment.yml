@@ -33,6 +33,7 @@ dependencies:
   - zeromq
   - pyyaml
   - xarray
+  - xgboost
   - pip
   - pip:
       - h5py

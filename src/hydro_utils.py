@@ -124,7 +124,7 @@ def convert_mm_to_cms(df):
         lambda row: (
             # Convert mm to meters, multiply by the lake surface area, and divide by seconds in the given month
             (row['value [mm]'] / 1000) * lake_sa.get(row['lake'], 0) / 
-            seconds_in_month(row.name[2], row.name[1])  # seconds_in_month() needs to be defined elsewhere
+            seconds_in_month(row['year'], row['month'])
         ), axis=1
     )
     
