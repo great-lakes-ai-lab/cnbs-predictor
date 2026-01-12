@@ -98,28 +98,41 @@ jupyter lab
 
 ```graphql
 cnbs-predictor/
-├── CODE_OF_CONDUCT.md      # Code of conduct for contributors
-├── LICENSE                 # Project license
-├── docs/                   # Sphinx-based documentation (coming soon)
-├── README.md               # Project README file
-├── requirements/           # Conda environment requirements
-├── src/                    # Source code for data processing and utilities
-│   ├── __init__.py         # Package initialization
-│   ├── data_processing.py  # Functions for data processing
-│   ├── database_utils.py   # Database utility functions
-│   ├── hydro_utils.py      # Hydrology-related utilities
-├── tests/                  # Unit tests for the codebase
-├── notebooks/              # Jupyter notebooks
-│   ├── exploratory/        # Initial exploration notebooks
-│   ├── production/         # Production-ready notebooks (use these to produce forecasts)
-│   └── verification/       # Notebooks for testing and validation
-├── data/                   # Directory for storing input data
-│   ├── cfs/                # Archived CFS forecast data
-│   ├── forecast/           # Forecast files (database, html viewer)
-│   ├── glcc/               # GLCC target data
-│   ├── input/              # Input data (database, trained model weights)
-│   ├── l2swbm/             # L2SWBM target data
-│   └── training/           # Training data
+├── CODE_OF_CONDUCT.md                          # Code of conduct for contributors
+├── CONTRIBUTING.md                             # Project license
+├── data                                        # Directory for storing input data
+│   ├── cfs                                     # Archived pre-processed CFS data
+|   ├── cfsr                                    # Archived pre-processed CFSR data used for training
+│   ├── glcc                                    # NBS Observations from GLCC used for training and validation
+│   ├── glsea                                   # GLSEA Sea Surface Temperatures for the Great Lakes
+│   ├── input                                   # Model inputs for forecasting (ML models, scalers, masks, etc.)
+│   ├── l2swbm                                  # L2SWBM target data (P, E, R)
+│   ├── probabilities                           # Probability files from USACE (update as needed) 
+├── docs                                        # Documents
+├── forecast                                    # Folder to save the forecast output
+│   └── figures                                 # Forecast figures
+├── LICENSE                                     # Project license
+├── notebooks                                   # Jupyter notebooks
+│   ├── exploratory                             # Initial exploration and additionally helpful notebooks
+│   ├── production                              # Production-ready notebooks (use these to produce forecasts)
+│   └── verification                            # Notebooks used for verification and validation
+├── README.md                                   # Project README file
+├── requirements                                # Conda environment requirements
+├── ROADMAP.md                                  # Release schedule and CI/CD implementation plan
+├── src                                         # Source code for data processing and utilities
+│   ├── __init__.py                             # Package Initialization
+│   ├── data_downloader.py                      # Functions for downloading data
+│   ├── data_loader.py                          # Functions for loading data from the data folder
+│   ├── data_processor.py                       # Functions to process data
+│   ├── database_utils.py                       # Fucntions for loading and saving data from the database
+│   ├── hydro_utils.py                          # Utility functions for hydrology 
+│   ├── plotting.py                             # Functions for simple plotting of data
+│   └── utilities.py                            # Other basic utility functions
+└── tests                                       # Unit tests for the codebase
+    ├── integration                             # Tests for integration (coming soon)
+    └── unit                                    # Contains unit test
+        ├── __init__.py                         # Package Initialization
+        └── test_data_inputs.py                 # Unit tests to check for data availability and inputs
 ```
 
 ## Contributing
