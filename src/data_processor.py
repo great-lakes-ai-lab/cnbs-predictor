@@ -9,6 +9,7 @@ import joblib
 import netCDF4 as nc
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
+import re
 
 from src.database_utils import CFSDatabase
 from src.hydro_utils import calculate_evaporation, calculate_grid_cell_areas
@@ -300,38 +301,85 @@ class CFSTransformer:
         return df_final
 
 class CNBSForecaster:
-    def __init__(self, model_dir, scaler_dir):
-        """
-        Initialize the ForecastModel class.
 
+    def __init__(self, model_dir, scaler_dir, model_list=None, scaler_list=None):
+        """
         Parameters
         ----------
         model_dir : str
-            Path to directory containing trained model files (e.g., *.joblib).
+            Directory with trained models
         scaler_dir : str
-            Path to directory containing x_scaler.joblib and y_scaler.joblib.
+            Directory with scalers
+        model_list : list[str], optional
+            Models to load (e.g. ['GP1','RF1'])
+        scaler_list : list[str], optional
+            Scalers to load (e.g. ['X1','Y1'])
         """
+
         self.model_dir = model_dir
         self.scaler_dir = scaler_dir
-        self.x_scaler = joblib.load(os.path.join(scaler_dir, "x_scaler.joblib"))
-        self.y_scaler = joblib.load(os.path.join(scaler_dir, "y_scaler.joblib"))
+
+        self.model_list = model_list
+        self.scaler_list = scaler_list
+
         self.models = self._load_models()
+        self.scalers = self._load_scalers()
 
-    def _load_models(self):
+    def _load_scalers(self):
         """
-        Load all models from the model directory.
-
+        Load selected scalers from scaler directory.
         Returns
         -------
         dict
-            Dictionary of model name → model object
+            scaler_name → scaler object
         """
+
+        scalers = {}
+
+        for file in os.listdir(self.scaler_dir):
+
+            if not file.endswith(".joblib"):
+                continue
+
+            # Example: X_scaler_stage1.joblib → X_scaler_stage1
+            scaler_name = file.replace(".joblib", "")
+
+            # Filter if requested
+            if self.scaler_list is not None:
+                if scaler_name not in self.scaler_list:
+                    continue
+
+            scaler_path = os.path.join(self.scaler_dir, file)
+
+            scalers[scaler_name] = joblib.load(scaler_path)
+
+        if len(scalers) == 0:
+            raise ValueError(
+                f"No scalers loaded. Check scaler_list={self.scaler_list}"
+            )
+
+        return scalers
+
+    def _load_models(self):
+
         models = {}
+
         for file in os.listdir(self.model_dir):
-            if file.endswith("_trained_model.joblib"):
-                model_name = file.split("_")[0]  # Assumes filename starts with model name
-                model_path = os.path.join(self.model_dir, file)
-                models[model_name] = joblib.load(model_path)
+            if not file.endswith("_trained_model.joblib"):
+                continue
+            model_name = file.split("_")[0]
+            if self.model_list is not None:
+                if model_name not in self.model_list:
+                    continue
+
+            model_path = os.path.join(self.model_dir, file)
+            models[model_name] = joblib.load(model_path)
+
+        if len(models) == 0:
+            raise ValueError(
+                f"No models loaded. Check model_list={self.model_list}"
+            )
+
         return models
 
     def predict(self, X, model_name):
@@ -369,6 +417,142 @@ class CNBSForecaster:
         df = pd.DataFrame(y, columns=column_names, index=X.index)
         df["model"] = model_name
         return df
+
+    def predict_chain(self, X, base_model):
+        """
+        Run full chained prediction: base_model1 -> base_model2 -> ...
+
+        Example:
+            predict_chain(X, "GP") runs GP1 -> GP2 -> ...
+
+        Parameters
+        ----------
+        X : pd.DataFrame
+            Input features
+        base_model : str
+            Model family name (e.g. 'GP', 'RF', 'NN')
+
+        Returns
+        -------
+        pd.DataFrame
+            Final-stage predictions
+        """
+
+        # --------------------------------
+        # 1. Find all stages for this base
+        # --------------------------------
+
+        pattern = re.compile(rf"^{base_model}(\d+)$")
+
+        stages = []
+
+        for name in self.models.keys():
+
+            m = pattern.match(name)
+
+            if m:
+                stage = int(m.group(1))
+                stages.append(stage)
+
+        if len(stages) == 0:
+            raise ValueError(
+                f"No models found for base '{base_model}'"
+            )
+
+        stages = sorted(stages)
+
+
+        # --------------------------------
+        # 2. Validate chain completeness
+        # --------------------------------
+
+        expected = list(range(1, max(stages) + 1))
+
+        if stages != expected:
+            raise ValueError(
+                f"Incomplete chain for {base_model}: {stages}"
+            )
+
+
+        # --------------------------------
+        # 3. Initialize input
+        # --------------------------------
+
+        X_current = X.copy()
+
+
+        # --------------------------------
+        # 4. Run chain
+        # --------------------------------
+
+        for stage in stages:
+
+            model_name = f"{base_model}{stage}"
+
+            # ---- Select scalers ----
+
+            if stage == 1:
+                x_name = "x_scaler"
+                y_name = "y1_scaler"
+            else:
+                x_name = f"y{stage-1}_scaler"
+                y_name = f"y{stage}_scaler"
+
+            if x_name not in self.scalers:
+                raise ValueError(f"Missing scaler: {x_name}")
+
+            if y_name not in self.scalers:
+                raise ValueError(f"Missing scaler: {y_name}")
+
+            x_scaler = self.scalers[x_name]
+            y_scaler = self.scalers[y_name]
+
+            # ---- Scale input ----
+
+            X_scaled = x_scaler.transform(X_current)
+
+            # ---- Predict ----
+
+            model = self.models[model_name]
+
+            y_scaled = model.predict(X_scaled)
+
+            y_pred = y_scaler.inverse_transform(y_scaled)
+
+            # ---- Prepare for next stage ----
+
+            X_current = pd.DataFrame(
+                y_pred,
+                index=X.index,
+                columns=[f"stage{stage}_out_{i}"
+                        for i in range(y_pred.shape[1])]
+            )
+
+            print(f"Completed {model_name}")
+
+
+        # --------------------------------
+        # 5. Final output formatting
+        # --------------------------------
+
+        final_stage = stages[-1]
+
+        column_names = [
+            f"{lake}_{comp}_mo{m}"
+            for lake in ['superior', 'michigan-huron', 'erie', 'ontario']
+            for comp in ['precipitation', 'evaporation', 'runoff', 'nbs']
+            for m in range(12)
+        ]
+
+        df_final = pd.DataFrame(
+            X_current.values,
+            index=X.index,
+            columns=column_names[:X_current.shape[1]]
+        )
+
+        df_final["model"] = f"{base_model}{final_stage}"
+
+        return df_final
 
 class ForecastTransformer:
     """
