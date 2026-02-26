@@ -7,8 +7,8 @@ import calendar
 from datetime import datetime
 import joblib
 import netCDF4 as nc
-import matplotlib.pyplot as plt
-import matplotlib.dates as mdates
+#import matplotlib.pyplot as plt
+#import matplotlib.dates as mdates
 
 from src.database_utils import CFSDatabase
 from src.hydro_utils import calculate_evaporation, calculate_grid_cell_areas
@@ -580,3 +580,4 @@ def align_prob_with_start_date(merged_df, start_date):
     df = df.drop(columns=["month_num", "year"], errors="ignore").reset_index()
     
     return df
+
