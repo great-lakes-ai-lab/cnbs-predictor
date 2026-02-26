@@ -23,6 +23,7 @@ dependencies:
   - plotly
   - prompt-toolkit
   - properscoring
+  - pytest
   - requests
   - requests-toolbelt
   - setuptools
