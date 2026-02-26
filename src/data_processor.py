@@ -7,6 +7,9 @@ import calendar
 from datetime import datetime
 import joblib
 import netCDF4 as nc
+import json
+import uuid
+from typing import Optional, Sequence, Dict
 #import matplotlib.pyplot as plt
 #import matplotlib.dates as mdates
 
@@ -581,3 +584,259 @@ def align_prob_with_start_date(merged_df, start_date):
     
     return df
 
+
+class SeasonalCycleProcessor:
+    """
+    SeasonalCycleProcessor
+
+    Computes and applies a monthly climatology to a pandas DataFrame
+    with a DatetimeIndex at monthly frequency.
+
+    This class supports:
+        - fit(): compute monthly climatology from a baseline period
+        - transform(): convert raw values -> anomalies
+        - inverse_transform(): convert anomalies -> raw values
+        - save()/load(): persist climatology artifact to disk
+
+    Assumptions
+    -----------
+    - Input DataFrames must have a pandas.DatetimeIndex.
+    - Index must represent monthly timestamps.
+    - Monthly climatology is computed as the mean for each calendar month (1–12).
+    """
+
+    def __init__(self):
+        self.climatology: Optional[pd.DataFrame] = None
+        self.metadata: Dict = {
+            "id": str(uuid.uuid4())
+        }
+
+    # ---------------------------------------------------------------------
+    # FIT
+    # ---------------------------------------------------------------------
+
+    def fit(
+        self,
+        df: pd.DataFrame,
+        var_list: Optional[Sequence[str]] = None,
+        baseline_time: Optional[slice] = None,
+        baseline_definition: Optional[Dict] = None,
+    ) -> "SeasonalCycleProcessor":
+        """
+        Compute monthly climatology from a baseline period.
+
+        Parameters
+        ----------
+        df : pandas.DataFrame
+            Input DataFrame with a DatetimeIndex.
+            Rows represent monthly observations.
+            Columns represent variables.
+
+        var_list : sequence of str, optional
+            Subset of columns to compute climatology for.
+            If None, all numeric columns are used.
+
+        baseline_time : slice, optional
+            Time slice applied before computing climatology.
+            Example:
+                slice("1981-01-01", "2008-12-01")
+
+            If None, full DataFrame is used.
+
+        baseline_definition : dict, optional
+            Metadata describing baseline choice (for reproducibility).
+            Example:
+                {"train_start": "1981-01-01", "train_end": "2008-12-01"}
+
+        Returns
+        -------
+        self : SeasonalCycleProcessor
+            Fitted processor with climatology stored internally.
+        """
+
+        if not isinstance(df.index, pd.DatetimeIndex):
+            raise ValueError("DataFrame must have a DatetimeIndex.")
+
+        if var_list is None:
+            var_list = [c for c in df.columns if pd.api.types.is_numeric_dtype(df[c])]
+
+        missing = [c for c in var_list if c not in df.columns]
+        if missing:
+            raise ValueError(f"Missing columns in DataFrame: {missing}")
+
+        fit_df = df
+        if baseline_time is not None:
+            fit_df = df.loc[baseline_time]
+
+        if fit_df.empty:
+            raise ValueError("Baseline selection resulted in empty DataFrame.")
+
+        # Compute monthly mean climatology
+        months = fit_df.index.month
+        climatology = fit_df[var_list].groupby(months).mean()
+        climatology.index.name = "month"
+
+        # Ensure months 1–12 are present
+        climatology = climatology.reindex(range(1, 13))
+
+        self.climatology = climatology
+
+        # Store metadata
+        self.metadata.update({
+            "var_list": list(var_list),
+            "baseline_definition": baseline_definition,
+            "calculation_date": str(pd.Timestamp.now()),
+            "reduction": "monthly_mean",
+        })
+
+        return self
+
+    # ---------------------------------------------------------------------
+    # TRANSFORM
+    # ---------------------------------------------------------------------
+
+    def transform(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Convert raw values to anomalies.
+
+        Parameters
+        ----------
+        df : pandas.DataFrame
+            DataFrame with DatetimeIndex.
+            Must contain columns used during fit().
+
+        Returns
+        -------
+        anomalies : pandas.DataFrame
+            DataFrame with same shape as input,
+            where climatological monthly means have been subtracted.
+        """
+
+        if self.climatology is None:
+            raise ValueError("Processor must be fitted before calling transform().")
+
+        if not isinstance(df.index, pd.DatetimeIndex):
+            raise ValueError("DataFrame must have a DatetimeIndex.")
+
+        var_list = self.metadata["var_list"]
+        months = df.index.month
+
+        out = df.copy()
+        out[var_list] = (
+            out[var_list].to_numpy()
+            - self.climatology.loc[months, var_list].to_numpy()
+        )
+
+        return out
+
+    # ---------------------------------------------------------------------
+    # INVERSE TRANSFORM
+    # ---------------------------------------------------------------------
+
+    def inverse_transform(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Convert anomalies back to raw values.
+
+        Parameters
+        ----------
+        df : pandas.DataFrame
+            Anomaly DataFrame with DatetimeIndex.
+
+        Returns
+        -------
+        raw : pandas.DataFrame
+            DataFrame with climatology added back.
+        """
+
+        if self.climatology is None:
+            raise ValueError("Processor must be fitted before calling inverse_transform().")
+
+        if not isinstance(df.index, pd.DatetimeIndex):
+            raise ValueError("DataFrame must have a DatetimeIndex.")
+
+        var_list = self.metadata["var_list"]
+        months = df.index.month
+
+        out = df.copy()
+        out[var_list] = (
+            out[var_list].to_numpy()
+            + self.climatology.loc[months, var_list].to_numpy()
+        )
+
+        return out
+
+    # ---------------------------------------------------------------------
+    # SAVE / LOAD
+    # ---------------------------------------------------------------------
+
+    def save(self, base_dir: str = "seasonal_cycles") -> Dict[str, str]:
+        """
+        Save climatology artifact to disk.
+
+        Parameters
+        ----------
+        base_dir : str
+            Directory where artifact files will be written.
+
+        Returns
+        -------
+        dict
+            Dictionary containing:
+                {
+                    "climatology_path": <path>,
+                    "metadata_path": <path>
+                }
+        """
+
+        if self.climatology is None:
+            raise ValueError("Nothing to save. Call fit() first.")
+
+        os.makedirs(base_dir, exist_ok=True)
+
+        artifact_id = self.metadata["id"]
+
+        clim_path = os.path.join(base_dir, f"{artifact_id}_climatology.csv")
+        meta_path = os.path.join(base_dir, f"{artifact_id}_metadata.json")
+
+        self.climatology.to_csv(clim_path)
+
+        with open(meta_path, "w") as f:
+            json.dump(self.metadata, f, indent=2)
+
+        return {
+            "climatology_path": clim_path,
+            "metadata_path": meta_path,
+        }
+
+    @classmethod
+    def load(cls, climatology_path: str, metadata_path: str) -> "SeasonalCycleProcessor":
+        """
+        Load a previously saved climatology artifact.
+
+        Parameters
+        ----------
+        climatology_path : str
+            Path to saved climatology CSV.
+
+        metadata_path : str
+            Path to saved metadata JSON.
+
+        Returns
+        -------
+        SeasonalCycleProcessor
+            Processor with climatology loaded.
+        """
+
+        instance = cls()
+
+        instance.climatology = pd.read_csv(
+            climatology_path,
+            index_col=0
+        )
+        instance.climatology.index = instance.climatology.index.astype(int)
+        instance.climatology.index.name = "month"
+
+        with open(metadata_path, "r") as f:
+            instance.metadata = json.load(f)
+
+        return instance
