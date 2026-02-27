@@ -9,6 +9,7 @@ import joblib
 import netCDF4 as nc
 import json
 import uuid
+import re
 from typing import Optional, Sequence, Dict
 #import matplotlib.pyplot as plt
 #import matplotlib.dates as mdates
@@ -840,3 +841,94 @@ class SeasonalCycleProcessor:
             instance.metadata = json.load(f)
 
         return instance
+
+# -----------------------------------------------------------------------------
+# Lead-aware utilities (targets shifted to *_mo{k})
+# -----------------------------------------------------------------------------
+
+_MO_RE = re.compile(r"_mo(\d+)$")
+
+def add_climatology_back_leadwide(
+    df_anom_leadwide: pd.DataFrame,
+    scp_y: "SeasonalCycleProcessor",
+    strict: bool = False,
+) -> pd.DataFrame:
+    """
+    Convert lead-wide anomaly targets to lead-wide absolute targets by adding a monthly climatology.
+
+    This is designed for targets that have already been shifted into lead form, where each column
+    ends with `_mo{k}` and the DataFrame index represents the *initialization* date.
+
+    Month alignment rule
+    --------------------
+    For a given init date `t` and lead `k` months, the verifying month is:
+        verifying_month = month(t + k months)
+
+    Parameters
+    ----------
+    df_anom_leadwide : pd.DataFrame
+        Anomaly DataFrame indexed by init date (must be a DatetimeIndex).
+        Columns must end with `_mo{k}` where k is lead in months, e.g.:
+            'superior_target_precipitation_mo0', ..., '..._mo11'
+
+        Values must be in anomaly units (i.e., NOT standardized).
+
+    scp_y : SeasonalCycleProcessor
+        A fitted seasonal-cycle processor with attribute `climatology`:
+            - index: months 1..12 (int)
+            - columns: base (unshifted) variable names, e.g. 'superior_target_precipitation'
+            - values: monthly climatological means in absolute units
+
+    strict : bool, default False
+        If True, raise an error if any column does not match the `_mo{k}` pattern.
+
+    Returns
+    -------
+    pd.DataFrame
+        Same shape/columns/index as `df_anom_leadwide`, but in absolute units
+        (monthly climatology added back to each lead column).
+    """
+    if not isinstance(df_anom_leadwide.index, pd.DatetimeIndex):
+        raise ValueError("df_anom_leadwide must have a DatetimeIndex (init dates).")
+
+    if not hasattr(scp_y, "climatology"):
+        raise AttributeError("scp_y must have a `climatology` attribute (fit the processor first).")
+
+    clim = scp_y.climatology
+
+    if not isinstance(clim, pd.DataFrame):
+        raise TypeError("scp_y.climatology must be a pandas DataFrame (month x base_var).")
+
+    # Optional sanity check: months should be 1..12
+    # (Don't force order; just ensure membership.)
+    expected_months = set(range(1, 13))
+    clim_months = set(pd.Index(clim.index).astype(int).tolist())
+    if not expected_months.issubset(clim_months):
+        raise ValueError(
+            "scp_y.climatology index must include months 1..12. "
+            f"Got: {sorted(clim_months)[:15]}..."
+        )
+
+    out = df_anom_leadwide.copy()
+    idx = out.index
+
+    for col in out.columns:
+        m = _MO_RE.search(col)
+        if m is None:
+            if strict:
+                raise ValueError(f"Column '{col}' does not end with _mo{{k}}.")
+            continue
+
+        lead = int(m.group(1))
+        base = _MO_RE.sub("", col)  # strip _mo{k}
+
+        if base not in clim.columns:
+            raise KeyError(
+                f"Base variable '{base}' not found in climatology columns. "
+                "This usually means climatology was fit on different variable names."
+            )
+
+        verifying_month = (idx + pd.DateOffset(months=lead)).month  # 1..12
+        out[col] = out[col].to_numpy() + clim.loc[verifying_month, base].to_numpy()
+
+    return out
