@@ -1,0 +1,28 @@
+{
+  "id": "b3ca834f-ccd9-40a3-a221-ad6f3d72496b",
+  "var_list": [
+    "superior_target_evaporation",
+    "superior_target_precipitation",
+    "superior_target_runoff",
+    "superior_target_nbs",
+    "michigan-huron_target_evaporation",
+    "michigan-huron_target_precipitation",
+    "michigan-huron_target_runoff",
+    "michigan-huron_target_nbs",
+    "erie_target_evaporation",
+    "erie_target_precipitation",
+    "erie_target_runoff",
+    "erie_target_nbs",
+    "ontario_target_evaporation",
+    "ontario_target_precipitation",
+    "ontario_target_runoff",
+    "ontario_target_nbs"
+  ],
+  "baseline_definition": {
+    "train_start": "1981-09-01",
+    "train_end": "2005-12-01",
+    "note": "targets climatology fit on training period only"
+  },
+  "calculation_date": "2026-02-27 09:44:01.499182",
+  "reduction": "monthly_mean"
+}
