@@ -70,6 +70,10 @@ Following this naming convention will make it easier to identify the purpose of 
 - Use the present tense ("Add feature" not "Added feature").
 - When possible, reference issues and pull requests after the first line.
 
+### Unit Tests
+
+For now, run tests with `pytest -q` from repo root.
+
 ### Documentation Styleguide
 
 - Use **Markdown** for documentation.
