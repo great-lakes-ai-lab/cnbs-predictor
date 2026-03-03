@@ -186,7 +186,7 @@ class CFSTransformer:
 
         # Convert cfs_run to datetime if not already
         if not pd.api.types.is_datetime64_any_dtype(df["cfs_run"]):
-            df["cfs_run"] = pd.to_datetime(df["cfs_run"], format="%Y%m%d%H")
+            df["cfs_run"] = pd.to_datetime(df["cfs_run"], format="%Y-%m-%d %H")
 
         # Convert first_forecast_month to datetime (set day=1)
         first_fc_date = pd.to_datetime(first_forecast_month + "-01")
@@ -249,28 +249,32 @@ class CFSTransformer:
         """
         data = self.df.copy()
         # Convert 'cfs_run' to datetime
-        data['cfs_run'] = pd.to_datetime(data['cfs_run'], format='%Y%m%d%H')
+        data['cfs_run'] = pd.to_datetime(data['cfs_run'], format='%Y-%m-%d %H')
 
         # Create a datetime column from the 'year' and 'month' columns (set day to 1)
-        data['forecast_date'] = pd.to_datetime(dict(year=data['year'], month=data['month'], day=1))
+        #data['forecast_date'] = pd.to_datetime(dict(year=data['year'], month=data['month'], day=1))
+        data["forecast_month"] = pd.to_datetime(
+            data["forecast_month"],
+            format="%m-%Y"
+        )
 
         # Calculate the lead time in months
-        data['forecast_month'] = (data['forecast_date'].dt.year - data['cfs_run'].dt.year) * 12 + \
-                            (data['forecast_date'].dt.month - data['cfs_run'].dt.month)
+        data['months_out'] = (data['forecast_month'].dt.year - data['cfs_run'].dt.year) * 12 + \
+                            (data['forecast_month'].dt.month - data['cfs_run'].dt.month)
 
         # Drop the intermediate column
-        data.drop(columns='forecast_date', inplace=True)
+        data.drop(columns='forecast_month', inplace=True)
 
         # Create column names
         data['column_name'] = (
             data['lake'] + '_' +
             data['surface_type'] + '_' +
             data['component'] + '_mo' +
-            data['forecast_month'].astype(str)
+            data['months_out'].astype(str)
         )
 
         # Pivot the DataFrame to wide format
-        df_wide = data.pivot(index='cfs_run', columns='column_name', values='value [mm]')
+        df_wide = data.pivot(index='cfs_run', columns='column_name', values='value')
 
         # Remove any columns ending in '_month10'
         df_wide = df_wide.loc[:, ~df_wide.columns.str.endswith('_mo10')]
