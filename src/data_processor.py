@@ -249,14 +249,14 @@ class CFSTransformer:
         """
         data = self.df.copy()
         # Convert 'cfs_run' to datetime
-        data['cfs_run'] = pd.to_datetime(data['cfs_run'], format='%Y-%m-%d %H')
+        data['cfs_run'] = pd.to_datetime(data['cfs_run'], format='%Y%m%d%H')
 
         # Create a datetime column from the 'year' and 'month' columns (set day to 1)
-        #data['forecast_date'] = pd.to_datetime(dict(year=data['year'], month=data['month'], day=1))
-        data["forecast_month"] = pd.to_datetime(
-            data["forecast_month"],
-            format="%m-%Y"
-        )
+        data['forecast_month'] = pd.to_datetime(dict(year=data['year'], month=data['month'], day=1))
+        #data["forecast_month"] = pd.to_datetime(
+        #    data["forecast_month"],
+        #    format="%m-%Y"
+        #)
 
         # Calculate the lead time in months
         data['months_out'] = (data['forecast_month'].dt.year - data['cfs_run'].dt.year) * 12 + \
@@ -274,7 +274,7 @@ class CFSTransformer:
         )
 
         # Pivot the DataFrame to wide format
-        df_wide = data.pivot(index='cfs_run', columns='column_name', values='value')
+        df_wide = data.pivot(index='cfs_run', columns='column_name', values='value [mm]')
 
         # Remove any columns ending in '_month10'
         df_wide = df_wide.loc[:, ~df_wide.columns.str.endswith('_mo10')]
