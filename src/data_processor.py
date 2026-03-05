@@ -156,22 +156,6 @@ class CFSTransformer:
         if not isinstance(df, pd.DataFrame):
             raise ValueError("Input must be a pandas DataFrame.")
         self.df = df.copy()
-
-    def shift_variables(self, lag=0, lead=0):
-        """
-        Create variables columns to include lags and leads.
-        """
-        df = self.df.copy()
-        new_columns = []
-        for column in df.columns:
-            for lag_month in range(1, lag):
-                new_columns.append(df[column].shift(lag_month).rename(f'{column}_mo-{lag_month}'))
-            for lead_month in range(1, lead):
-                new_columns.append(df[column].shift(-lead_month).rename(f'{column}_mo{lead_month}'))
-        df_shifted = pd.concat([df] + new_columns, axis=1)
-        df_shifted.rename(columns={col: f"{col}_mo0" for col in df.columns}, inplace=True)
-        df_shifted = df_shifted.dropna()
-        return df_shifted
     
     def filter(self, first_forecast_month, months_back=10):
         """
