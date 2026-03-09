@@ -679,6 +679,7 @@ class SeasonalCycleProcessor:
 
         # Ensure months 1–12 are present
         climatology = climatology.reindex(range(1, 13))
+        print(climatology)
 
         self.climatology = climatology
 
