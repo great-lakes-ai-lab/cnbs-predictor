@@ -317,8 +317,8 @@ class CNBSForecaster:
         """
         self.model_dir = model_dir
         self.scaler_dir = scaler_dir
-        self.x_scaler = joblib.load(os.path.join(scaler_dir, "x_scaler.joblib"))
-        self.y_scaler = joblib.load(os.path.join(scaler_dir, "y_scaler.joblib"))
+        self.x_scaler = joblib.load(os.path.join(scaler_dir, "x_scaler_anom.joblib"))
+        self.y_scaler = joblib.load(os.path.join(scaler_dir, "y_scaler_anom.joblib"))
         self.models = self._load_models()
 
     def _load_models(self):
@@ -332,7 +332,7 @@ class CNBSForecaster:
         """
         models = {}
         for file in os.listdir(self.model_dir):
-            if file.endswith("_trained_model.joblib"):
+            if file.endswith("_trained_model_anom.joblib"):
                 model_name = file.split("_")[0]  # Assumes filename starts with model name
                 model_path = os.path.join(self.model_dir, file)
                 models[model_name] = joblib.load(model_path)
@@ -795,10 +795,12 @@ class SeasonalCycleProcessor:
 
         os.makedirs(base_dir, exist_ok=True)
 
-        artifact_id = self.metadata["id"]
+        #artifact_id = self.metadata["id"]
 
-        clim_path = os.path.join(base_dir, f"{artifact_id}_climatology.csv")
-        meta_path = os.path.join(base_dir, f"{artifact_id}_metadata.json")
+        # Removed aritifact_id from filename to avoid issues with special characters and multiple files in the same directory.
+        # The metadata file still contains the unique ID for reproducibility and tracking.
+        clim_path = os.path.join(base_dir, "climatology.csv")
+        meta_path = os.path.join(base_dir, "metadata.json")
 
         self.climatology.to_csv(clim_path)
 
