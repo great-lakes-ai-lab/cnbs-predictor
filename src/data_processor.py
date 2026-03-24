@@ -302,6 +302,76 @@ class CFSTransformer:
         df_final = df[feature_column_order]
 
         return df_final
+    
+    def structure_input_anom(self, scp_X):
+        """
+        Transforms a long-format CFS forecast DataFrame into a wide-format one,
+        with one column per lake/surface/component/forecast_month combination,
+        and dummy variables for initialization month.
+
+        Parameters:
+            data (pd.DataFrame): Input DataFrame with columns:
+                ['date', 'year', 'month', 'lake', 'surface_type', 'component', 'value [mm]']
+
+        Returns:
+            pd.DataFrame: Transformed wide-format DataFrame with dummy-encoded init months.
+        """
+        data = self.df.copy()
+        # Convert 'cfs_run' to datetime
+        data['cfs_run'] = pd.to_datetime(data['cfs_run'], format='%Y%m%d%H')
+
+        # Create a datetime column from the 'year' and 'month' columns (set day to 1)
+        data['forecast_date'] = pd.to_datetime(dict(year=data['year'], month=data['month'], day=1))
+
+        print(data)
+        X = data.set_index('forecast_date')
+        X_anom = scp_X.transform(X)
+        X_anom = X_anom.reset_index()
+        
+        # Calculate the lead time in months
+        X_anom['forecast_month'] = (X_anom['forecast_date'].dt.year - X_anom['cfs_run'].dt.year) * 12 + \
+                            (X_anom['forecast_date'].dt.month - X_anom['cfs_run'].dt.month)
+
+        # Drop the intermediate column
+        X_anom.drop(columns='forecast_date', inplace=True)
+
+        # Create column names
+        X_anom['column_name'] = (
+            X_anom['lake'] + '_' +
+            X_anom['surface_type'] + '_' +
+            X_anom['component'] + '_mo' +
+            X_anom['forecast_month'].astype(str)
+        )
+
+        # Pivot the DataFrame to wide format
+        df_wide = X_anom.pivot(index='cfs_run', columns='column_name', values='value [mm]')
+
+        # Remove any columns ending in '_month10'
+        df_wide = df_wide.loc[:, ~df_wide.columns.str.endswith('_mo10')]
+        df_wide.dropna(inplace=True)
+        # Remove column level name
+        df_wide.columns.name = None
+
+        # Extract the month
+        df_wide['init_month'] = df_wide.index.month
+        df_wide['init_month'] = pd.Categorical(df_wide['init_month'], categories=range(1, 13))
+
+        df = pd.get_dummies(df_wide, columns=['init_month'], prefix='month')
+
+        feature_column_order = (
+            [f'month_{i}' for i in range(1, 13)] +
+            [
+                f'{lake}_{surface_type}_{comp}_mo{m}'
+                for lake in ['superior', 'michigan-huron', 'erie', 'ontario']
+                for surface_type in ['lake', 'land']
+                for comp in ['precipitation', 'evaporation', 'air_temperature']
+                for m in range(10) #from 0 to 9, representing the 10 months of lead time
+            ]
+        )
+
+        df_final = df[feature_column_order]
+
+        return df_final
 
 class CNBSForecaster:
     def __init__(self, model_dir, scaler_dir):
@@ -584,7 +654,6 @@ def align_prob_with_start_date(merged_df, start_date):
     df = df.drop(columns=["month_num", "year"], errors="ignore").reset_index()
     
     return df
-
 
 class SeasonalCycleProcessor:
     """
