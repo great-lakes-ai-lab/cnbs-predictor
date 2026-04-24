@@ -932,3 +932,106 @@ def add_climatology_back_leadwide(
         out[col] = out[col].to_numpy() + clim.loc[verifying_month, base].to_numpy()
 
     return out
+
+def build_climatology_variable_name_long(
+    df: pd.DataFrame,
+    *,
+    lake_col: str = "lake",
+    surface_col: str = "surface",
+    component_col: str = "component",
+) -> pd.Series:
+    """
+    Build climatology variable names for long-format operational CFS forecast data.
+
+    Expected output names match training climatology columns, e.g.:
+        superior_lake_precipitation
+        michigan-huron_land_air_temperature
+    """
+    required = [lake_col, surface_col, component_col]
+    missing = [c for c in required if c not in df.columns]
+    if missing:
+        raise ValueError(f"Missing required columns: {missing}")
+
+    return (
+        df[lake_col].astype(str)
+        + "_"
+        + df[surface_col].astype(str)
+        + "_"
+        + df[component_col].astype(str)
+    )
+
+
+def subtract_climatology_long(
+    df: pd.DataFrame,
+    scp: "SeasonalCycleProcessor",
+    *,
+    value_col: str = "value",
+    month_col: str = "month",
+    lake_col: str = "lake",
+    surface_col: str = "surface_type",
+    component_col: str = "component",
+    output_col: str = "value_anom",
+    variable_col: str = "climatology_variable",
+    strict: bool = True,
+) -> pd.DataFrame:
+    """
+    Convert absolute long-format operational CFS forecast values to anomalies.
+
+    This is intended for data from cfs_forecast_data.db, where each row contains:
+        cfs_run, year, month, lake, surface_type, component, value
+
+    Unlike lead-wide training data, the operational table already contains the
+    verifying forecast month in `month`, so no init-date + lead calculation is needed.
+
+    Operation:
+        value_anom = value - climatology[month, variable]
+
+    where:
+        variable = f"{lake}_{surface_type}_{component}"
+    """
+    if scp.climatology is None:
+        raise ValueError("SeasonalCycleProcessor must be fitted or loaded before use.")
+
+    required = [value_col, month_col, lake_col, surface_col, component_col]
+    missing = [c for c in required if c not in df.columns]
+    if missing:
+        raise ValueError(f"Missing required columns: {missing}")
+
+    clim = scp.climatology
+    out = df.copy()
+
+    out[month_col] = out[month_col].astype(int)
+    out[variable_col] = build_climatology_variable_name_long(
+        out,
+        lake_col=lake_col,
+        surface_col=surface_col,
+        component_col=component_col,
+    )
+
+    bad_months = sorted(set(out[month_col]) - set(range(1, 13)))
+    if bad_months:
+        raise ValueError(f"{month_col} must contain values 1–12. Got: {bad_months}")
+
+    missing_vars = sorted(set(out[variable_col]) - set(clim.columns))
+    if missing_vars and strict:
+        raise KeyError(
+            "Some operational forecast variables are missing from the climatology: "
+            f"{missing_vars}"
+        )
+
+    if missing_vars:
+        out[output_col] = np.nan
+        ok = out[variable_col].isin(clim.columns)
+    else:
+        ok = pd.Series(True, index=out.index)
+
+    clim_values = pd.Series(np.nan, index=out.index, dtype=float)
+
+    for var in out.loc[ok, variable_col].unique():
+        rows = ok & (out[variable_col] == var)
+        months = out.loc[rows, month_col].to_numpy()
+        clim_values.loc[rows] = clim.loc[months, var].to_numpy()
+
+    out[output_col] = out[value_col].to_numpy() - clim_values.to_numpy()
+
+    return out
