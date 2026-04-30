@@ -1006,16 +1006,6 @@ class CFSTransformer:
             if scp is None:
                 raise ValueError("scp must be provided when mode='anomaly'")
 
-            print("Operational variables:")
-            print(sorted(set(
-                data["lake"] + "_" +
-                data["surface_type"] + "_" +
-                data["component"]
-            )))
-
-            print("\nClimatology columns:")
-            print(sorted(scp.climatology.columns))
-
             data = SeasonalCycleProcessor.subtract_climatology_long(
                 data,
                 scp,
