@@ -157,7 +157,7 @@ This project is licensed under the [GNU Affero General Public License Version 3.
         <b>Dani Jones</b>
       </a>
       <br/>
-      Principle Investigator
+      Principal Investigator
     </td>
     <td align="center">
       <a href="https://github.com/lefitzpatrick">

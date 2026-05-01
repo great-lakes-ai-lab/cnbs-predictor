@@ -1,0 +1,35 @@
+{
+  "id": "0f06ae2d-a5df-40b3-8ab1-d21ded1a4c04",
+  "var_list": [
+    "superior_lake_precipitation",
+    "michigan-huron_lake_precipitation",
+    "erie_lake_precipitation",
+    "ontario_lake_precipitation",
+    "superior_land_precipitation",
+    "michigan-huron_land_precipitation",
+    "erie_land_precipitation",
+    "ontario_land_precipitation",
+    "superior_lake_evaporation",
+    "michigan-huron_lake_evaporation",
+    "erie_lake_evaporation",
+    "ontario_lake_evaporation",
+    "superior_land_evaporation",
+    "michigan-huron_land_evaporation",
+    "erie_land_evaporation",
+    "ontario_land_evaporation",
+    "superior_lake_air_temperature",
+    "michigan-huron_lake_air_temperature",
+    "erie_lake_air_temperature",
+    "ontario_lake_air_temperature",
+    "superior_land_air_temperature",
+    "michigan-huron_land_air_temperature",
+    "erie_land_air_temperature",
+    "ontario_land_air_temperature"
+  ],
+  "baseline_definition": {
+    "train_start": "1979-01-01",
+    "train_end": "2017-12-31"
+  },
+  "calculation_date": "2026-05-01 10:34:40.455691",
+  "reduction": "monthly_mean"
+}
