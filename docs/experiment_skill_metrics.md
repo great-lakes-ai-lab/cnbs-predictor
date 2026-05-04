@@ -1,6 +1,6 @@
-### Overview of Experiments and Skill Metrics:
+# Overview of Experiments and Skill Metrics:
 
-# **Overall [NBS] – RMSE**
+## **Overall [NBS] – RMSE**
 | Model |   Base |  Month |    SST |    SWE |  Chain |  Local | Anomoly |
 | ----- | -----: | -----: | -----: | -----: | -----: | -----: | ------: |
 | GP    | 86.678 | 84.972 | 85.096 | 86.292 | 86.506 | 88.260 |  81.753 |
@@ -8,7 +8,7 @@
 | NN    | 87.127 | 87.438 | 88.166 | 88.099 | 87.671 | 87.083 |  82.250 |
 | XGB   | 97.004 | 98.900 | 97.751 | 96.549 | 89.347 | 90.650 |  81.896 |
 
-# **Overall [NBS] – R²**
+## **Overall [NBS] – R²**
 | Model |  Base | Month |   SST |   SWE | Chain | Local | Anomoly |
 | ----- | ----: | ----: | ----: | ----: | ----: | ----: | ------: |
 | GP    | 0.563 | 0.580 | 0.579 | 0.567 | 0.565 | 0.547 |   0.612 |
@@ -16,7 +16,7 @@
 | NN    | 0.559 | 0.556 | 0.548 | 0.549 | 0.553 | 0.559 |   0.607 |
 | XGB   | 0.453 | 0.432 | 0.445 | 0.458 | 0.536 | 0.523 |   0.610 |
 
-# **Overall [NBS, P, E, R] – RMSE**
+## **Overall [NBS, P, E, R] – RMSE**
 | Model |   Base |  Month |    SST |    SWE |  Chain |  Local | Anomoly |
 | ----- | -----: | -----: | -----: | -----: | -----: | -----: | ------: |
 | GP    | 48.657 | 47.603 | 47.770 | 48.427 | 48.430 | 49.438 |  45.923 |
@@ -24,7 +24,7 @@
 | NN    | 48.914 | 49.077 | 49.631 | 49.603 | 49.173 | 48.854 |  46.208 |
 | XGB   | 53.820 | 54.807 | 54.202 | 53.608 | 50.389 | 50.849 |  46.031 |
 
-# **Overall [NBS, P, E, R] – R²**
+## **Overall [NBS, P, E, R] – R²**
 | Model |  Base | Month |   SST |   SWE | Chain | Local | Anomoly |
 | ----- | ----: | ----: | ----: | ----: | ----: | ----: | ------: |
 | GP    | 0.616 | 0.633 | 0.630 | 0.620 | 0.620 | 0.604 |   0.658 |
@@ -32,7 +32,7 @@
 | NN    | 0.612 | 0.610 | 0.601 | 0.601 | 0.608 | 0.613 |   0.654 |
 | XGB   | 0.531 | 0.513 | 0.524 | 0.534 | 0.589 | 0.581 |   0.657 |
 
-# **Overall [NBS] - RMSE by lake**
+## **Overall [NBS] - RMSE by lake**
 | Model | Superior (Local) | Superior (Domain) | Superior (Anomaly) | Michigan-Huron (Local) | Michigan-Huron (Domain) | Michigan-Huron (Anomaly) | Erie (Local) | Erie (Domain) | Erie (Anomaly) | Ontario (Local) | Ontario (Domain) | Ontario (Anomaly) |
 | ----- | ---------------: | ----------------: | -----------------: | ---------------------: | ----------------------: | -----------------------: | -----------: | ------------: | -------------: | --------------: | ---------------: | ----------------: |
 | GP    |           48.175 |            49.043 |             45.287 |                 49.858 |                  50.618 |                   43.768 |      115.176 |       111.308 |        107.810 |         114.399 |          112.676 |           105.568 |
@@ -40,7 +40,7 @@
 | NN    |           47.419 |            48.916 |             45.704 |                 50.832 |                  50.135 |                   44.096 |      116.351 |       111.269 |        108.204 |         109.379 |          113.058 |           106.390 |
 | XGB   |           50.484 |            49.379 |             45.426 |                 57.020 |                  54.916 |                   43.983 |      122.543 |       122.215 |        107.553 |         109.784 |          131.333 |           106.121 |
 
-# **Overall [NBS] – R² by Lake**
+## **Overall [NBS] – R² by Lake**
 | Model | Superior (Local) | Superior (Domain) | Superior (Anomaly) | Michigan-Huron (Local) | Michigan-Huron (Domain) | Michigan-Huron (Anomaly) | Erie (Local) | Erie (Domain) | Erie (Anomaly) | Ontario (Local) | Ontario (Domain) | Ontario (Anomaly) |
 | ----- | ---------------: | ----------------: | -----------------: | ---------------------: | ----------------------: | -----------------------: | -----------: | ------------: | -------------: | --------------: | ---------------: | ----------------: |
 | GP    |            0.594 |             0.579 |              0.641 |                  0.538 |                   0.523 |                    0.644 |        0.455 |         0.491 |          0.522 |           0.479 |            0.495 |             0.556 |
@@ -48,7 +48,7 @@
 | NN    |            0.607 |             0.582 |              0.635 |                  0.519 |                   0.532 |                    0.638 |        0.444 |         0.491 |          0.519 |           0.524 |            0.491 |             0.549 |
 | XGB   |            0.554 |             0.574 |              0.639 |                  0.395 |                   0.439 |                    0.640 |        0.383 |         0.386 |          0.525 |           0.520 |            0.313 |             0.552 |
 
-# **Overall [NBS] – Bias by Lake**
+## **Overall [NBS] – Bias by Lake**
 | Model | Superior (Local) | Superior (Domain) | Superior (Anomaly) | Michigan-Huron (Local) | Michigan-Huron (Domain) | Michigan-Huron (Anomaly) | Erie (Local) | Erie (Domain) | Erie (Anomaly) | Ontario (Local) | Ontario (Domain) | Ontario (Anomaly) |
 | ----- | ---------------: | ----------------: | -----------------: | ---------------------: | ----------------------: | -----------------------: | -----------: | ------------: | -------------: | --------------: | ---------------: | ----------------: |
 | GP    |           -9.418 |            -7.013 |             -9.799 |                -11.918 |                  -6.147 |                   -7.077 |       14.506 |        -4.024 |          3.498 |         -28.143 |          -15.843 |            -5.076 |
@@ -56,5 +56,5 @@
 | NN    |           -3.086 |            -2.186 |             -9.193 |                 -5.127 |                  -3.202 |                   -5.007 |       22.798 |         0.968 |          4.432 |         -19.259 |          -23.634 |            -6.919 |
 | XGB   |          -11.908 |            -9.214 |             -9.930 |                -10.291 |                 -10.181 |                   -5.241 |       -9.576 |       -17.003 |          5.406 |          -9.877 |          -34.537 |            -5.185 |
 
-# **Summary:**
+## **Summary:**
 “Anomaly-based inputs provide the largest performance gain across all models, with Random Forest offering the most consistent overall performance and Gaussian Process achieving the highest peak skill (but less robust).”

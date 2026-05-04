@@ -1,4 +1,4 @@
-# Lindsay Fitzpatrick  
+# Experiment Summary
 **Updated:** 03/04/2026  
 
 ## Experiment Summary
