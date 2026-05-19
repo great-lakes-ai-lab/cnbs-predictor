@@ -514,6 +514,128 @@ class SeasonalCycleProcessor:
 
     _MO_RE = re.compile(r"_mo(\d+)$")
 
+    def subtract_climatology_leadwide(
+        df_abs_leadwide: pd.DataFrame,
+        scp_X,
+        strict: bool = False,
+    ) -> pd.DataFrame:
+
+        """
+        Convert lead-wide absolute forecast values into climatological anomalies
+        by subtracting the monthly climatology corresponding to each forecast
+        verifying month.
+
+        This function is designed for datasets containing multiple forecast lead
+        months stored as separate columns using the naming convention:
+
+            <variable>_mo{k}
+
+        where:
+            - <variable> is the base predictor variable name
+            - k is the forecast lead month
+
+        Examples
+        --------
+        superior_precipitation_mo0
+        superior_precipitation_mo1
+        erie_runoff_mo3
+
+        For each column:
+
+        1. The forecast lead month is extracted using the `_mo{k}` suffix.
+        2. The base variable name is identified by removing the suffix.
+        3. The verifying month is computed by shifting the initialization date
+        forward by the forecast lead.
+        4. The corresponding monthly climatology is subtracted from the forecast
+        value.
+
+        The verifying month is calculated as:
+
+            verifying_month =
+                initialization_date + forecast_lead_months
+
+        This ensures that climatology subtraction is aligned with the actual
+        target month being forecasted rather than the initialization month.
+
+        If a column does not contain a `_mo{k}` suffix, it is treated as lead 0.
+
+        Parameters
+        ----------
+        df_abs_leadwide : pd.DataFrame
+            DataFrame containing absolute forecast values indexed by forecast
+            initialization date. The index must be a DatetimeIndex.
+
+        scp_X : SeasonalCycleProcessor
+            A fitted SeasonalCycleProcessor object containing a `climatology`
+            attribute. The climatology DataFrame must be indexed by month
+            (1-12) and contain columns matching the base variable names.
+
+        strict : bool, optional
+            If True, raise a KeyError when a climatology variable is not found.
+            If False, missing variables are skipped with a warning message.
+            Default is False.
+
+        Returns
+        -------
+        pd.DataFrame
+            DataFrame with the same shape, index, and columns as the input,
+            but with values transformed from absolute space into anomaly space
+            by subtracting the monthly climatology.
+
+        Raises
+        ------
+        ValueError
+            If `df_abs_leadwide` does not have a DatetimeIndex.
+
+        AttributeError
+            If `scp_X` does not contain a `climatology` attribute.
+
+        KeyError
+            If `strict=True` and a base variable is not found in the
+            climatology columns.
+        """
+        if not isinstance(df_abs_leadwide.index, pd.DatetimeIndex):
+            raise ValueError("df_abs_leadwide must have a DatetimeIndex.")
+
+        if not hasattr(scp_X, "climatology"):
+            raise AttributeError("scp_X must have a `climatology` attribute.")
+
+        clim = scp_X.climatology.copy()
+        clim.columns = clim.columns.astype(str).str.strip()
+
+        out = df_abs_leadwide.copy()
+        out.columns = out.columns.astype(str).str.strip()
+
+        idx = out.index
+
+        for col in out.columns:
+            m = _MO_RE.search(col)
+
+            if m is not None:
+                lead = int(m.group(1))
+                base = _MO_RE.sub("", col).strip()
+            else:
+                lead = 0
+                base = col.strip()
+
+            if base not in clim.columns:
+                if strict:
+                    raise KeyError(
+                        f"Base variable '{base}' not found in climatology columns."
+                    )
+                else:
+                    print(f"Skipping '{col}' because '{base}' is not in climatology.")
+                    continue
+
+            verifying_month = (idx + pd.DateOffset(months=lead)).month
+
+            out[col] = (
+                out[col].to_numpy()
+                - clim.loc[verifying_month, base].to_numpy()
+            )
+
+        return out
+
     @staticmethod
     def add_climatology_back_leadwide(
         df_anom_leadwide: pd.DataFrame,
@@ -595,7 +717,289 @@ class SeasonalCycleProcessor:
         )
 
         return scp_X, scp_y
+
+class CFSTransformer:
+    def __init__(self, df):
+        """
+        Initialize the transformer with a pandas DataFrame.
+        """
+        if not isinstance(df, pd.DataFrame):
+            raise ValueError("Input must be a pandas DataFrame.")
+        self.df = df.copy()
     
+    def filter(self, first_forecast_month, months_back=10):
+        """
+        Filters rows based on cfs_run after going back a given number of months
+        from the first forecast month.
+
+        Parameters:
+            first_forecast_month (str): YYYY-MM, e.g., '2025-12'
+            months_back (int): number of months to go back
+        """
+        df = self.df.copy()
+
+        # Convert cfs_run to datetime if not already
+        if not pd.api.types.is_datetime64_any_dtype(df["cfs_run"]):
+            df["cfs_run"] = pd.to_datetime(df["cfs_run"], format="%Y%m%d%H")
+
+        # Convert first_forecast_month to datetime (set day=1)
+        first_fc_date = pd.to_datetime(first_forecast_month + "-01")
+
+        # Subtract months_back months
+        start_date = first_fc_date - pd.DateOffset(months=months_back)
+
+        # Keep only rows with cfs_run >= start_date
+        df_filtered = df[df["cfs_run"] >= start_date]
+
+        return df_filtered
+
+    def shift_variables(self, lag=0, lead=0):
+        """
+        Create the variables columns to include lags (last month values) and lead variables
+        
+        Parameters:
+        - df (pd.DataFrame): The DataFrame containing the time series data.
+        - lag (int): The number of months you want to include lagged variables. Default = 0
+        - lead (int): The number of months for the advance variables. Default = 0
+        
+        Returns:
+        - pd.DataFrame: The DataFrame with added variable columns for lags and leading.
+        """
+        df = self.df.copy()  # To avoid modifying the original DataFrame
+
+        new_columns = []  # List to store the new lag and lead columns
+
+        # Generate target columns for the lag and lead months
+        for column in df.columns:
+            
+            for lag_month in range(1, lag):
+                new_columns.append(df[column].shift(lag_month).rename(f'{column}_mo-{lag_month}'))
+            for lead_month in range(1, lead):
+                new_columns.append(df[column].shift(-lead_month).rename(f'{column}_mo{lead_month}'))
+
+        # Concatenate the new columns with the original DataFrame
+        df_shifted = pd.concat([df] + new_columns, axis=1)
+
+        # Rename original columns to have _mo0 suffix
+        df_shifted.rename(columns={col: f"{col}_mo0" for col in df.columns}, inplace=True)
+
+        # Drop rows with any NaN values generated by shifting for the target
+        df_shifted = df_shifted.dropna()
+
+        return df_shifted
+
+    def structure_input(self):
+        """
+        Transforms a long-format CFS forecast DataFrame into a wide-format one.
+
+        Parameters:
+            mode (str): "absolute" or "anomaly"
+            scp (SeasonalCycleProcessor): required if mode="anomaly"
+
+        Returns:
+            pd.DataFrame: A wide-format DataFrame where each column corresponds to a specific lake, 
+            variable type, and forecast month.
+        """
+        data = self.df.copy()
+
+        # In the past I have used "value [mm]" and tried to switch it to "value"
+        value_col = "value [mm]" if "value [mm]" in data.columns else "value"
+
+        data['cfs_run'] = pd.to_datetime(data['cfs_run'], format='%Y%m%d%H')
+
+        data['forecast_date'] = pd.to_datetime(
+            dict(year=data['year'], month=data['month'], day=1)
+        )
+
+        data['forecast_month'] = (
+            (data['forecast_date'].dt.year - data['cfs_run'].dt.year) * 12 +
+            (data['forecast_date'].dt.month - data['cfs_run'].dt.month)
+        )
+
+        data.drop(columns='forecast_date', inplace=True)
+
+        # Column naming
+        data['column_name'] = (
+            data['lake'] + '_' +
+            data['surface_type'] + '_' +
+            data['component'] + '_mo' +
+            data['forecast_month'].astype(str)
+        )
+
+        # Use value_col instead of hardcoded column
+        df_wide = data.pivot(
+            index='cfs_run',
+            columns='column_name',
+            values=value_col
+        )
+
+        df_wide = df_wide.loc[:, ~df_wide.columns.str.endswith('_mo10')]
+        df_wide.dropna(inplace=True)
+        df_wide.columns.name = None
+
+        feature_column_order = (
+            [
+                f'{lake}_{surface_type}_{comp}_mo{m}'
+                for lake in ['superior', 'michigan-huron', 'erie', 'ontario']
+                for surface_type in ['lake', 'land']
+                for comp in ['precipitation', 'evaporation', 'air_temperature']
+                for m in range(10)
+            ]
+        )
+
+        df_final = df_wide[feature_column_order]
+
+        return df_final
+
+    def add_time_features(
+        self,
+        add_month_cycle=True,
+        add_time_trend=True,
+        normalize_time=True,
+        overwrite=True,
+        copy=True
+    ):
+        """
+        Add cyclical month features and a continuous time trend.
+
+        Parameters
+        ----------
+        df : pandas.DataFrame
+            Input dataframe indexed by a pandas DatetimeIndex.
+
+        add_month_cycle : bool, default=True
+            If True, add cyclical month features:
+                - month_sin
+                - month_cos
+
+            These preserve the cyclical nature of calendar months
+            (e.g., December is close to January).
+
+        add_time_trend : bool, default=True
+            If True, add a continuous decimal-year time trend feature.
+
+        normalize_time : bool, default=True
+            If True, standardize the time feature to:
+                mean = 0
+                standard deviation = 1
+
+            This improves numerical stability for many machine
+            learning models.
+
+        overwrite : bool, default=True
+            If True, remove any pre-existing:
+                - month_sin
+                - month_cos
+                - time
+
+            before adding new versions.
+
+        copy : bool, default=True
+            If True, operate on a copy of the dataframe.
+
+        Returns
+        -------
+        pandas.DataFrame
+            Dataframe with added temporal predictor columns.
+
+        Notes
+        -----
+        The cyclical month encoding is defined as:
+
+            month_sin = sin(2π * month / 12)
+            month_cos = cos(2π * month / 12)
+
+        which avoids discontinuities between December and January.
+
+        The continuous time trend is represented as:
+
+            year + (month - 1) / 12
+
+        and optionally normalized.
+        """
+
+        # ---------------------------------------------------------
+        # Optionally work on a copy to avoid modifying original data
+        # ---------------------------------------------------------
+        out = self.df.copy()
+
+        # ---------------------------------------------------------
+        # Ensure dataframe uses a DatetimeIndex
+        # ---------------------------------------------------------
+        if not isinstance(out.index, pd.DatetimeIndex):
+            raise TypeError(
+                "DataFrame index must be a pandas DatetimeIndex."
+            )
+
+        # ---------------------------------------------------------
+        # Remove existing temporal feature columns if requested
+        # ---------------------------------------------------------
+        temporal_cols = ["month_sin", "month_cos", "time"]
+
+        if overwrite:
+            out = out.drop(
+                columns=[c for c in temporal_cols if c in out.columns],
+                errors="ignore"
+            )
+
+        # =========================================================
+        # CYCLICAL MONTH FEATURES
+        # =========================================================
+        if add_month_cycle:
+
+            # Convert months to numpy array for vectorized operations
+            month = out.index.month.to_numpy()
+
+            # Encode month as cyclical sine/cosine coordinates
+            out["month_sin"] = np.sin(
+                2 * np.pi * month / 12
+            )
+
+            out["month_cos"] = np.cos(
+                2 * np.pi * month / 12
+            )
+
+        # =========================================================
+        # CONTINUOUS TIME TREND
+        # =========================================================
+        if add_time_trend:
+
+            # Decimal year representation
+            #
+            # Example:
+            #   Jan 2015 -> 2015.00
+            #   Feb 2015 -> 2015.08
+            #   Jul 2015 -> 2015.50
+            #
+            t = (
+                out.index.year.to_numpy()
+                + (out.index.month.to_numpy() - 1) / 12.0
+            )
+
+            # Shift to start at zero for numerical stability
+            time = t - t.min()
+
+            # -----------------------------------------------------
+            # Optional standardization
+            # -----------------------------------------------------
+            if normalize_time:
+
+                time_std = time.std()
+
+                # Avoid divide-by-zero for constant arrays
+                if time_std == 0:
+                    time = np.zeros_like(time)
+
+                else:
+                    time = (
+                        (time - time.mean())
+                        / time_std
+                    )
+
+            out["time"] = time
+
+        return out
+        
 class CNBSForecaster:
     def __init__(self, model_dir, scaler_dir, mode="actual"):
         """
@@ -798,7 +1202,6 @@ class ForecastTransformer:
 
         return df_final
 
-
     def filter(self, first_forecast_month):
         """
         Filters rows to keep the first forecast month >= first_forecast_month
@@ -841,7 +1244,6 @@ class ForecastTransformer:
 
         else:
             raise ValueError("Dataframe must contain either 'forecast_month' or ('year','month') columns.")
-
 
 @staticmethod
 def align_prob_with_start_date(merged_df, start_date):
@@ -907,170 +1309,3 @@ def align_prob_with_start_date(merged_df, start_date):
     df = df.drop(columns=["month_num", "year"], errors="ignore").reset_index()
     
     return df
-
-class CFSTransformer:
-    def __init__(self, df):
-        """
-        Initialize the transformer with a pandas DataFrame.
-        """
-        if not isinstance(df, pd.DataFrame):
-            raise ValueError("Input must be a pandas DataFrame.")
-        self.df = df.copy()
-    
-    def filter(self, first_forecast_month, months_back=10):
-        """
-        Filters rows based on cfs_run after going back a given number of months
-        from the first forecast month.
-
-        Parameters:
-            first_forecast_month (str): YYYY-MM, e.g., '2025-12'
-            months_back (int): number of months to go back
-        """
-        df = self.df.copy()
-
-        # Convert cfs_run to datetime if not already
-        if not pd.api.types.is_datetime64_any_dtype(df["cfs_run"]):
-            df["cfs_run"] = pd.to_datetime(df["cfs_run"], format="%Y%m%d%H")
-
-        # Convert first_forecast_month to datetime (set day=1)
-        first_fc_date = pd.to_datetime(first_forecast_month + "-01")
-
-        # Subtract months_back months
-        start_date = first_fc_date - pd.DateOffset(months=months_back)
-
-        # Keep only rows with cfs_run >= start_date
-        df_filtered = df[df["cfs_run"] >= start_date]
-
-        return df_filtered
-
-    def shift_variables(self, lag=0, lead=0):
-        """
-        Create the variables columns to include lags (last month values) and lead variables
-        
-        Parameters:
-        - df (pd.DataFrame): The DataFrame containing the time series data.
-        - lag (int): The number of months you want to include lagged variables. Default = 0
-        - lead (int): The number of months for the advance variables. Default = 0
-        
-        Returns:
-        - pd.DataFrame: The DataFrame with added variable columns for lags and leading.
-        """
-        df = self.df.copy()  # To avoid modifying the original DataFrame
-
-        new_columns = []  # List to store the new lag and lead columns
-
-        # Generate target columns for the lag and lead months
-        for column in df.columns:
-            
-            for lag_month in range(1, lag):
-                new_columns.append(df[column].shift(lag_month).rename(f'{column}_mo-{lag_month}'))
-            for lead_month in range(1, lead):
-                new_columns.append(df[column].shift(-lead_month).rename(f'{column}_mo{lead_month}'))
-
-        # Concatenate the new columns with the original DataFrame
-        df_shifted = pd.concat([df] + new_columns, axis=1)
-
-        # Rename original columns to have _mo0 suffix
-        df_shifted.rename(columns={col: f"{col}_mo0" for col in df.columns}, inplace=True)
-
-        # Drop rows with any NaN values generated by shifting for the target
-        df_shifted = df_shifted.dropna()
-
-        return df_shifted
-
-    def structure_input(self, mode: str = "absolute", scp=None):
-        """
-        Transforms a long-format CFS forecast DataFrame into a wide-format one.
-
-        Parameters:
-            mode (str): "absolute" or "anomaly"
-            scp (SeasonalCycleProcessor): required if mode="anomaly"
-
-        Returns:
-            pd.DataFrame
-        """
-        data = self.df.copy()
-
-        # -----------------------------
-        # Validate mode
-        # -----------------------------
-        if mode not in {"absolute", "anomaly"}:
-            raise ValueError("mode must be 'absolute' or 'anomaly'")
-
-        # -----------------------------
-        # Apply anomaly transform (LONG FORMAT)
-        # -----------------------------
-        value_col = "value [mm]" if "value [mm]" in data.columns else "value"
-
-        if mode == "anomaly":
-            if scp is None:
-                raise ValueError("scp must be provided when mode='anomaly'")
-
-            data = SeasonalCycleProcessor.subtract_climatology_long(
-                data,
-                scp,
-                value_col=value_col,
-                month_col="month",
-                lake_col="lake",
-                surface_col="surface_type",
-                component_col="component",
-                output_col="value_anom",
-            )
-            value_col = "value_anom"
-
-        # -----------------------------
-        # Existing pipeline (unchanged)
-        # -----------------------------
-        data['cfs_run'] = pd.to_datetime(data['cfs_run'], format='%Y%m%d%H')
-
-        data['forecast_date'] = pd.to_datetime(
-            dict(year=data['year'], month=data['month'], day=1)
-        )
-
-        data['forecast_month'] = (
-            (data['forecast_date'].dt.year - data['cfs_run'].dt.year) * 12 +
-            (data['forecast_date'].dt.month - data['cfs_run'].dt.month)
-        )
-
-        data.drop(columns='forecast_date', inplace=True)
-
-        # Column naming stays identical
-        data['column_name'] = (
-            data['lake'] + '_' +
-            data['surface_type'] + '_' +
-            data['component'] + '_mo' +
-            data['forecast_month'].astype(str)
-        )
-
-        # 👇 ONLY CHANGE: use value_col instead of hardcoded column
-        df_wide = data.pivot(
-            index='cfs_run',
-            columns='column_name',
-            values=value_col
-        )
-
-        df_wide = df_wide.loc[:, ~df_wide.columns.str.endswith('_mo10')]
-        df_wide.dropna(inplace=True)
-        df_wide.columns.name = None
-
-        df_wide['init_month'] = df_wide.index.month
-        df_wide['init_month'] = pd.Categorical(
-            df_wide['init_month'], categories=range(1, 13)
-        )
-
-        df = pd.get_dummies(df_wide, columns=['init_month'], prefix='month')
-
-        feature_column_order = (
-            [f'month_{i}' for i in range(1, 13)] +
-            [
-                f'{lake}_{surface_type}_{comp}_mo{m}'
-                for lake in ['superior', 'michigan-huron', 'erie', 'ontario']
-                for surface_type in ['lake', 'land']
-                for comp in ['precipitation', 'evaporation', 'air_temperature']
-                for m in range(10)
-            ]
-        )
-
-        df_final = df[feature_column_order]
-
-        return df_final

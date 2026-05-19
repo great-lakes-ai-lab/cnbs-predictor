@@ -1,5 +1,5 @@
 {
-  "id": "28c44df2-fa79-4897-9e9f-ff9e9ad32b8d",
+  "id": "a2fa54c0-d651-4a33-a812-273444492aa4",
   "var_list": [
     "superior_swe",
     "michigan-huron_swe",
@@ -38,6 +38,6 @@
     "train_start": "1979-01-01",
     "train_end": "2017-12-31"
   },
-  "calculation_date": "2026-05-12 14:34:52.515780",
+  "calculation_date": "2026-05-19 10:36:25.875081",
   "reduction": "monthly_mean"
 }

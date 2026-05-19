@@ -131,6 +131,99 @@ class DataLoader:
 
         return df
 
+    def load_snodas(self,file):
+        """
+        Load and process SNODAS SWE data.
+
+        Parameters
+        ----------
+        local_path : str
+            Base path to local data directory.
+
+        X_df : pd.DataFrame, optional
+            DataFrame to align SNODAS data with by index.
+
+        Returns
+        -------
+        snodas : pd.DataFrame
+            Processed SNODAS dataframe indexed by date.
+
+        aligned_snodas : pd.DataFrame, optional
+            SNODAS aligned to X_df index.
+
+        aligned_X_df : pd.DataFrame, optional
+            X_df aligned to SNODAS index.
+        """
+
+        # -----------------------------
+        # Area weights
+        # -----------------------------
+        eri_lake = 18596.39
+        eri_land = 81902.18
+
+        ont_lake = 15569.25
+        ont_land = 64465.19
+
+        mih_lake = 123626.28
+        mih_land = 236478.94
+
+        sup_lake = 78288.65
+        sup_land = 123736.05
+
+        mic_land = 118000.00
+        hur_land = 134100.00
+
+        # -----------------------------
+        # Load data
+        # -----------------------------
+        snodas_data = pd.read_csv(
+            file,
+            sep=',',
+            skiprows=5
+        )
+
+        # -----------------------------
+        # Create datetime column
+        # -----------------------------
+        snodas_data['date'] = pd.to_datetime(
+            snodas_data[['year', 'month', 'day']]
+        )
+
+        # -----------------------------
+        # Michigan-Huron weighted merge
+        # -----------------------------
+        snodas_data['michigan-huron_swe'] = (
+            (snodas_data['MIC'] * mic_land) +
+            (snodas_data['HUR'] * hur_land)
+        ) / mih_land
+
+        # -----------------------------
+        # Rename columns
+        # -----------------------------
+        snodas_data = snodas_data.rename(columns={
+            'SUP': 'superior_swe',
+            'ERI': 'erie_swe',
+            'ONT': 'ontario_swe'
+        })
+
+        # -----------------------------
+        # Keep desired columns
+        # -----------------------------
+        snodas = snodas_data[[
+            'date',
+            'superior_swe',
+            'michigan-huron_swe',
+            'erie_swe',
+            'ontario_swe'
+        ]]
+
+        # -----------------------------
+        # Set index
+        # -----------------------------
+        snodas.set_index('date', inplace=True)
+
+        return snodas
+
     def lake_probabilities(self, file_dir, units="cms"):
         """
         Reads probability of exceedance data for multiple Great Lakes from CSV files,
