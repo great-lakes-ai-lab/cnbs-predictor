@@ -80,8 +80,12 @@ def calculate_evaporation(temperature_K, latent_heat):
     Returns:
     float or numpy.ndarray: The evaporation rate in kg/m²/s.
 
-    Raises:
-    ValueError: If temperature_K is less than 0 or latent_heat is negative.
+    Notes:
+    No input validation is performed. Negative ``temperature_K`` or
+    ``latent_heat`` values will produce numerically valid but physically
+    meaningless results — callers are responsible for sanity-checking inputs.
+    Sub-optimal: a future revision should raise ``ValueError`` for inputs
+    outside physical ranges.
     """
     # ET = kg/(m²*time^1) or 1 mm
     # LE = MJ/(M²*time^1)
@@ -106,9 +110,16 @@ def convert_mm_to_cms(df):
 
     Args:
     - df (pd.DataFrame): DataFrame containing the columns 'value [mm]', 'lake', and a multi-index with 'month' and 'year'.
-    
+
     Returns:
     - pd.DataFrame: DataFrame with a new column 'value [cms]' representing the value in cubic meters per second.
+
+    Notes:
+    Recognized lake names are 'superior', 'michigan-huron', 'erie', and
+    'ontario'. Any other value in the 'lake' column silently yields a
+    'value [cms]' of 0 (surface area defaults to 0 via ``dict.get``).
+    Sub-optimal: a future revision should raise on unknown lake names
+    rather than masking the issue with zeros.
     """
 
     # Dictionary storing the surface area (in square meters) for each lake
