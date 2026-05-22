@@ -11,6 +11,8 @@ import json
 import uuid
 import re
 from typing import Optional, Sequence, Dict
+from properscoring import crps_ensemble
+from sklearn.metrics import mean_squared_error, r2_score
 
 from src.database_utils import CFSDatabase
 from src.hydro_utils import calculate_evaporation, calculate_grid_cell_areas
@@ -514,6 +516,7 @@ class SeasonalCycleProcessor:
 
     _MO_RE = re.compile(r"_mo(\d+)$")
 
+    @staticmethod
     def subtract_climatology_leadwide(
         df_abs_leadwide: pd.DataFrame,
         scp_X,
@@ -607,6 +610,8 @@ class SeasonalCycleProcessor:
         out.columns = out.columns.astype(str).str.strip()
 
         idx = out.index
+
+        _MO_RE = re.compile(r"_mo(\d+)$")
 
         for col in out.columns:
             m = _MO_RE.search(col)
@@ -726,30 +731,66 @@ class CFSTransformer:
         if not isinstance(df, pd.DataFrame):
             raise ValueError("Input must be a pandas DataFrame.")
         self.df = df.copy()
-    
-    def filter(self, first_forecast_month, months_back=10):
-        """
-        Filters rows based on cfs_run after going back a given number of months
-        from the first forecast month.
 
-        Parameters:
-            first_forecast_month (str): YYYY-MM, e.g., '2025-12'
-            months_back (int): number of months to go back
+
+    def filter(self, today=None, months_back=9):
         """
+        Filter rows to keep only CFS runs going back a specified number
+        of months from the current operational forecast month.
+
+        Rules
+        -----
+        - If today's day is before the 26th, use the current month.
+        - If today's day is on or after the 26th, use the following month.
+        - Then go back `months_back` months.
+        - Keep rows where cfs_run is greater than or equal to that start date.
+
+        Parameters
+        ----------
+        today : datetime, optional
+            Reference date. Defaults to current date if None.
+
+        months_back : int, default=9
+            Number of months to go back from the first forecast month.
+
+        Returns
+        -------
+        pd.DataFrame
+            Filtered dataframe.
+        """
+
         df = self.df.copy()
 
-        # Convert cfs_run to datetime if not already
+        if today is None:
+            today = datetime.today()
+
+        # Determine operational forecast month
+        if today.day < 26:
+            forecast_month = datetime(today.year, today.month, 1)
+        else:
+            forecast_month = (
+                pd.Timestamp(today.year, today.month, 1)
+                + pd.DateOffset(months=1)
+            )
+
+        # Go back desired number of months
+        start_date = (
+            pd.Timestamp(forecast_month)
+            - pd.DateOffset(months=months_back)
+        )
+
+        # Convert cfs_run to datetime if needed
         if not pd.api.types.is_datetime64_any_dtype(df["cfs_run"]):
-            df["cfs_run"] = pd.to_datetime(df["cfs_run"], format="%Y%m%d%H")
+            df["cfs_run"] = pd.to_datetime(
+                df["cfs_run"].astype(str),
+                format="%Y%m%d%H"
+            )
 
-        # Convert first_forecast_month to datetime (set day=1)
-        first_fc_date = pd.to_datetime(first_forecast_month + "-01")
+        # Filter
+        df_filtered = df[df["cfs_run"] >= start_date].copy()
 
-        # Subtract months_back months
-        start_date = first_fc_date - pd.DateOffset(months=months_back)
+        print(f"Beginning from month {pd.Timestamp(start_date).strftime('%m-%Y')}")
 
-        # Keep only rows with cfs_run >= start_date
-        df_filtered = df[df["cfs_run"] >= start_date]
 
         return df_filtered
 
@@ -1010,17 +1051,17 @@ class CNBSForecaster:
         model_dir : str
         scaler_dir : str
         mode : str
-            "actual" or "anom"
+            "actual" or "anomaly"
         """
-        if mode not in ["actual", "anom"]:
-            raise ValueError("mode must be 'actual' or 'anom'")
+        if mode not in ["actual", "anomaly"]:
+            raise ValueError("mode must be 'actual' or 'anomaly'")
 
         self.model_dir = model_dir
         self.scaler_dir = scaler_dir
         self.mode = mode
 
         # Set suffixes
-        suffix = "_anom" if mode == "anom" else ""
+        suffix = "_anom" if mode == "anomaly" else ""
 
         # Load scalers
         self.x_scaler = joblib.load(
@@ -1051,9 +1092,9 @@ class CNBSForecaster:
         X : pd.DataFrame
         model_name : str
         mode : str
-            "actual" or "anom"
+            "actual" or "anomaly"
         scp_y : object, optional
-            Required if mode='anom' to convert anomalies back to absolute
+            Required if mode='anomaly' to convert anomalies back to absolute
 
         Returns
         -------
@@ -1065,8 +1106,8 @@ class CNBSForecaster:
         if model_name not in self.models:
             raise ValueError(f"Model '{model_name}' not found")
 
-        if mode == "anom" and scp_y is None:
-            raise ValueError("scp_y must be provided when mode='anom'")
+        if mode == "anomaly" and scp_y is None:
+            raise ValueError("scp_y must be provided when mode='anomaly'")
 
         model = self.models[model_name]
 
@@ -1087,7 +1128,7 @@ class CNBSForecaster:
         df_pred = pd.DataFrame(y, columns=column_names, index=X.index)
 
         # --- Convert anomalies to absolute if needed ---
-        if mode == "anom":
+        if mode == "anomaly":
             df_pred = SeasonalCycleProcessor.add_climatology_back_leadwide(df_pred, scp_y)
 
         # --- Add model column efficiently ---
@@ -1309,3 +1350,210 @@ def align_prob_with_start_date(merged_df, start_date):
     df = df.drop(columns=["month_num", "year"], errors="ignore").reset_index()
     
     return df
+
+@staticmethod
+def create_accumulation_dataframe(
+    df,
+    accumulation_periods=(3, 6),
+    exclude_columns=None,
+):
+    """
+    Create a wide-format accumulation dataframe with one row per
+    cfs_run and model.
+
+    Parameters
+    ----------
+    df : pandas.DataFrame
+        Long-format forecast dataframe containing:
+            - cfs_run
+            - model
+            - forecast_month
+
+    accumulation_periods : tuple, default=(3, 6)
+        Number of forecast months to accumulate.
+
+    exclude_columns : list or None
+        Columns to exclude from accumulation calculations.
+
+    Returns
+    -------
+    pandas.DataFrame
+        Wide-format accumulation dataframe.
+    """
+
+    df = df.copy()
+
+    df["forecast_month"] = pd.to_datetime(df["forecast_month"])
+    df["cfs_run"] = pd.to_datetime(df["cfs_run"])
+
+    # Sort by lead time
+    df = df.sort_values(
+        ["cfs_run", "model", "forecast_month"]
+    )
+
+    # Columns not to accumulate
+    default_exclude = {
+        "cfs_run",
+        "forecast_month",
+        "model",
+        "date",
+    }
+
+    if exclude_columns is not None:
+        default_exclude.update(exclude_columns)
+
+    value_columns = [
+        c for c in df.columns
+        if c not in default_exclude
+    ]
+
+    output_rows = []
+    grouped = df.groupby(["cfs_run", "model"])
+
+    for (cfs_run, model), group in grouped:
+
+        row = {
+            "cfs_run": cfs_run,
+            "model": model,
+        }
+
+        group = group.sort_values("forecast_month")
+
+        for acc in accumulation_periods:
+            subset = group.iloc[:acc]
+            for col in value_columns:
+                row[f"{col}_acc{acc}"] = subset[col].sum()
+
+        output_rows.append(row)
+
+    return pd.DataFrame(output_rows)
+
+def compute_skill(
+    df,
+    lakes,
+    components,
+    model,
+    accumulations=None,   # None = monthly, e.g. (3, 6) = accumulated
+    metrics=(
+        'RMSE', 'RMSE_ext',
+        'R2', 'R2_ext',
+        'Bias', 'Bias_ext',
+        'VarRatio', 'VarRatio_ext',
+        'NSE', 'NSE_ext',
+        'KGE', 'KGE_ext',
+        'CRPS', 'CRPS_ext'
+    ),
+    low=5,
+    high=95,
+    date_col='date'
+):
+    df_model = df[df['model'] == model].copy()
+
+    if accumulations is None:
+        accumulations = [None]
+    elif isinstance(accumulations, int):
+        accumulations = [accumulations]
+
+    def calc(metric, obs, pred, ens):
+        if len(obs) == 0:
+            return np.nan
+
+        if metric == 'RMSE':
+            return np.sqrt(mean_squared_error(obs, pred))
+
+        if metric == 'R2':
+            return r2_score(obs, pred) if len(obs) > 1 else np.nan
+
+        if metric == 'Bias':
+            return np.mean(pred - obs)
+
+        if metric == 'VarRatio':
+            return np.var(pred) / np.var(obs) if np.var(obs) != 0 else np.nan
+
+        if metric == 'NSE':
+            denom = np.sum((obs - np.mean(obs)) ** 2)
+            return 1 - np.sum((pred - obs) ** 2) / denom if denom != 0 else np.nan
+
+        if metric == 'KGE':
+            r = np.corrcoef(obs, pred)[0, 1] if len(obs) > 1 else np.nan
+            alpha = np.std(pred) / np.std(obs) if np.std(obs) != 0 else np.nan
+            beta = np.mean(pred) / np.mean(obs) if np.mean(obs) != 0 else np.nan
+
+            if np.any(np.isnan([r, alpha, beta])):
+                return np.nan
+
+            return 1 - np.sqrt((r - 1)**2 + (alpha - 1)**2 + (beta - 1)**2)
+
+        if metric == 'CRPS':
+            return np.mean([crps_ensemble(o, p) for o, p in zip(obs, ens)])
+
+        raise ValueError(f"Unknown metric: {metric}")
+
+    all_results = []
+
+    for acc in accumulations:
+
+        metric_store = {m: [] for m in metrics}
+
+        for lake in lakes:
+            for comp in components:
+
+                base_var = f"{lake}_{comp}"
+
+                if acc is None:
+                    pred_col = base_var
+                    obs_col = f"{base_var}_obs"
+                else:
+                    pred_col = f"{base_var}_acc{acc}"
+                    obs_col = f"{base_var}_obs_acc{acc}"
+
+                if pred_col not in df_model.columns or obs_col not in df_model.columns:
+                    continue
+
+                data = df_model[[date_col, pred_col, obs_col]].dropna()
+                grouped = data.groupby(date_col)
+
+                obs_list, pred_list = [], []
+
+                for _, g in grouped:
+                    obs = g[obs_col].iloc[0]
+                    preds = g[pred_col].values
+
+                    obs_list.append(obs)
+                    pred_list.append(preds)
+
+                if len(obs_list) == 0:
+                    continue
+
+                obs_arr = np.array(obs_list)
+                pred_mean = np.array([p.mean() for p in pred_list])
+
+                low_thr = np.percentile(obs_arr, low)
+                high_thr = np.percentile(obs_arr, high)
+                mask = (obs_arr <= low_thr) | (obs_arr >= high_thr)
+
+                obs_ext = obs_arr[mask]
+                pred_ext = pred_mean[mask]
+                ens_ext = [p for p, m in zip(pred_list, mask) if m]
+
+                for m in metrics:
+                    if m.endswith('_ext'):
+                        base_metric = m.replace('_ext', '')
+                        val = calc(base_metric, obs_ext, pred_ext, ens_ext)
+                    else:
+                        val = calc(m, obs_arr, pred_mean, pred_list)
+
+                    metric_store[m].append(val)
+
+        results = {
+            'Model': model,
+            'Accumulation': 'monthly' if acc is None else f'{acc} month'
+        }
+
+        for m in metrics:
+            vals = np.array(metric_store[m], dtype=float)
+            results[m] = np.nanmean(vals) if len(vals) > 0 else np.nan
+
+        all_results.append(results)
+
+    return pd.DataFrame(all_results)

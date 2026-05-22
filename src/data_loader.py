@@ -131,7 +131,7 @@ class DataLoader:
 
         return df
 
-    def load_snodas(self,file):
+    def snodas(self,file):
         """
         Load and process SNODAS SWE data.
 
