@@ -12,6 +12,7 @@ import sys
 sys.path.append(os.path.abspath('../../'))
 from src.data_downloader import CFSDownloader
 
+@pytest.mark.integration
 class TestURLAvailability:
 
     # Test to check AWS and NCEI URL are accessible
@@ -61,6 +62,7 @@ from botocore.config import Config
 import requests
 from bs4 import BeautifulSoup
 
+@pytest.mark.integration
 class TestCFSDataAvailability:
     """
     Unit test that verifies today's (or yesterday's) Climate Forecast System (CFSv2)
@@ -130,6 +132,7 @@ class TestCFSDataAvailability:
         captured = capsys.readouterr()
         print(captured.out)
 
+@pytest.mark.integration
 class TestDataDownloader:
 
     def test_cfs_downloader_function(self, tmp_path):
