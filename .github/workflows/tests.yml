@@ -32,16 +32,17 @@ jobs:
       run:
         shell: bash -el {0}   # login shell so `conda activate` works
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Set up conda (environment-test.yml)
-        uses: conda-incubator/setup-miniconda@v3
+        uses: conda-incubator/setup-miniconda@v4
         with:
           environment-file: requirements/environment-test.yml
           activate-environment: nbs_env_test
           miniforge-version: latest
+          channels: conda-forge
+          channel-priority: strict
           conda-remove-defaults: true
-          use-only-tar-bz2: false
 
       - name: Show resolved environment
         run: conda list
@@ -60,14 +61,16 @@ jobs:
       run:
         shell: bash -el {0}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Set up conda (environment-test.yml)
-        uses: conda-incubator/setup-miniconda@v3
+        uses: conda-incubator/setup-miniconda@v4
         with:
           environment-file: requirements/environment-test.yml
           activate-environment: nbs_env_test
           miniforge-version: latest
+          channels: conda-forge
+          channel-priority: strict
           conda-remove-defaults: true
 
       - name: Run network tests

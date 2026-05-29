@@ -15,7 +15,6 @@
 name: nbs_env_test
 channels:
   - conda-forge
-  - defaults
 dependencies:
   - python==3.12.3
   - scipy
