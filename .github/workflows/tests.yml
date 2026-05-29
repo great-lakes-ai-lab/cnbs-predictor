@@ -1,0 +1,74 @@
+name: tests
+
+# Runs the automated test suite on a lightweight conda environment
+# (environment-test.yml — no TensorFlow). Two jobs:
+#   * test    — fast, deterministic suite on every PR / push to main. Gates merges.
+#   * network — the live NOAA/AWS reachability tests, on a daily schedule only,
+#               so an upstream outage never blocks a PR.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # 07:13 UTC daily — off the top of the hour on purpose.
+    - cron: "13 7 * * *"
+  workflow_dispatch: {}
+
+# A newer push to the same branch cancels an in-flight run.
+concurrency:
+  group: tests-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    # Deterministic suite: everything except the live-network tests.
+    # Skipped on the scheduled trigger (that's the network job's slot).
+    if: github.event_name != 'schedule'
+    name: unit tests (no network)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash -el {0}   # login shell so `conda activate` works
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up conda (environment-test.yml)
+        uses: conda-incubator/setup-miniconda@v3
+        with:
+          environment-file: requirements/environment-test.yml
+          activate-environment: nbs_env_test
+          miniforge-version: latest
+          conda-remove-defaults: true
+          use-only-tar-bz2: false
+
+      - name: Show resolved environment
+        run: conda list
+
+      - name: Run tests (excluding network)
+        run: pytest tests/ -m "not network" -v
+
+  network:
+    # Live NOAA AWS / NCEI reachability. Scheduled (and manually dispatchable)
+    # only — never on PRs. A red run here means "upstream data moved/outage",
+    # which is worth knowing but must not block development.
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    name: network tests (scheduled)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash -el {0}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up conda (environment-test.yml)
+        uses: conda-incubator/setup-miniconda@v3
+        with:
+          environment-file: requirements/environment-test.yml
+          activate-environment: nbs_env_test
+          miniforge-version: latest
+          conda-remove-defaults: true
+
+      - name: Run network tests
+        run: pytest tests/ -m network -v

@@ -72,7 +72,33 @@ Following this naming convention will make it easier to identify the purpose of 
 
 ### Unit Tests
 
-For now, run tests with `pytest -q` from repo root.
+Run tests with `pytest -q` from the repo root.
+
+Tests that reach live external endpoints (NOAA AWS / NCEI) are marked
+`@pytest.mark.network`. To run only the offline, deterministic suite:
+
+```bash
+pytest -m "not network"
+```
+
+To run only the live-network checks:
+
+```bash
+pytest -m network
+```
+
+#### Continuous integration
+
+On every pull request to `main`, GitHub Actions builds a lightweight conda
+environment from `requirements/environment-test.yml` (the full
+`environment.yml` minus the TensorFlow stack, which no test imports) and runs
+`pytest -m "not network"`. The live-network tests run on a daily schedule
+instead, so an upstream NOAA/AWS outage never blocks a PR. The CI suite grows
+automatically as new test files land on `main` — no workflow changes needed.
+
+If you bump a pinned version (`scikit-learn`, `cfgrib`, `joblib`, `python`) in
+`environment.yml`, update `requirements/environment-test.yml` to match;
+`tests/unit/test_environment.py` asserts the two stay in sync.
 
 ### Documentation Styleguide
 
