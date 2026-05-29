@@ -27,6 +27,10 @@ started," it belongs in the Wiki.
 
 - `Home.md` — Wiki landing page.
 - `Onboarding.md` — environment setup, running tests, branch conventions.
-- `Design-Notes.md` — modeling rationale and key design decisions.
+- `Design-Notes.md` — development history, dataset decisions, modeling
+  rationale, and the smoke-check vs. skill-validation distinction.
+- `Experiments.md` — experiment configurations explored during development.
+- `Skill-Metrics.md` — skill-validation results (RMSE / R² / bias) across
+  experiments and model families.
 - `FAQ.md` — stub, grow as questions recur.
 - `Decision-Log.md` — stub, append dated decisions.
