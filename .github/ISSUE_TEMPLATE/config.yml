@@ -1,0 +1,7 @@
+# Controls the issue-template chooser. Keeps the structured templates as the
+# primary path and points open-ended questions to Discussions.
+blank_issues_enabled: true
+contact_links:
+  - name: Questions & Discussion
+    url: https://github.com/great-lakes-ai-lab/cnbs-predictor/discussions
+    about: For general questions, ideas, or help, please start a discussion instead of opening an issue.

@@ -72,10 +72,11 @@ Following this naming convention will make it easier to identify the purpose of 
 
 ### Unit Tests
 
-Run tests with `pytest -q` from the repo root.
+Run the test suite with `pytest -q` from the repo root.
 
 Tests that reach live external endpoints (NOAA AWS / NCEI) are marked
-`@pytest.mark.network`. To run only the offline, deterministic suite:
+`@pytest.mark.network`. To run only the offline, deterministic suite (this is
+what runs on every pull request):
 
 ```bash
 pytest -m "not network"
