@@ -24,36 +24,46 @@ def check_url_exists(url):
         print(f"URL check failed: {e}")
         return False
 
+from datetime import datetime
+from dateutil.relativedelta import relativedelta
+
+
 def get_first_forecast_month(today=None):
     """
-    Returns the first forecast month based on today's date.
+    Returns the first forecast month based on today's date,
+    then shifts backward by a specified number of months.
 
-    Rules:
+    Rules
+    -----
     - If today's day is before the 26th, use the current month.
     - If today's day is on or after the 26th, use the following month.
-    
+    - Then subtract `months_back` months.
+
     Parameters
     ----------
     today : datetime, optional
-        The reference date. Defaults to current date if None.
-    
+        Reference date. Defaults to current date if None.
+
     Returns
     -------
     str
-        First forecast month in 'YYYY-MM' format.
+        Forecast month in 'YYYY-MM' format.
     """
+
     if today is None:
         today = datetime.today()
-    
+
+    # Determine operational forecast month
     if today.day < 26:
-        forecast_month = today
+        forecast_month = datetime(today.year, today.month, 1)
     else:
-        # Move to the first day of the next month
-        year = today.year + (today.month // 12)
-        month = today.month % 12 + 1
-        forecast_month = datetime(year, month, 1)
-    
-    formatted_month = forecast_month.strftime('%Y-%m')
+        forecast_month = (
+            datetime(today.year, today.month, 1)
+            + relativedelta(months=1)
+        )
+
+    formatted_month = forecast_month.strftime('%m-%Y')
+
     print(f"First forecast month: {formatted_month}")
 
     return formatted_month
@@ -127,3 +137,4 @@ def get_files(directory, affix, identifier):
             elif affix == 'prefix':
                 if file_name.startswith(identifier):
                     files.append(os.path.join(directory, file_name))
+        return files
