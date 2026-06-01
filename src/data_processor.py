@@ -15,7 +15,7 @@ from properscoring import crps_ensemble
 from sklearn.metrics import mean_squared_error, r2_score
 
 from src.database_utils import CFSDatabase
-from src.hydro_utils import calculate_evaporation, calculate_grid_cell_areas
+from src.hydro_utils import calculate_evaporation_rate, calculate_grid_cell_areas
 
 class CFSProcessor:
     def __init__(self, database, table):
@@ -131,7 +131,7 @@ class CFSProcessor:
                     )
                     mslhf_remap = mslhf_cut.interp(latitude=mask_lat, longitude=mask_lon, method='linear')
 
-                    evap = calculate_evaporation(mean2t_remap, mslhf_remap)
+                    evap = calculate_evaporation_rate(mean2t_remap, mslhf_remap)
 
                     for mask_var in mask_variables:
                         mask = mask_ds.variables[mask_var][:]
@@ -789,8 +789,7 @@ class CFSTransformer:
         # Filter
         df_filtered = df[df["cfs_run"] >= start_date].copy()
 
-        print(f"Beginning from month {pd.Timestamp(start_date).strftime('%m-%Y')}")
-
+        print(f"Beginning from month {pd.Timestamp(forecast_month).strftime('%m-%Y')}")
 
         return df_filtered
 
@@ -1299,7 +1298,7 @@ def align_prob_with_start_date(merged_df, start_date):
         - 'month' (str): three-letter month abbreviation ("Jan"–"Dec")
         - optionally 'month_num' and 'year' (they will be rebuilt if missing)
     start_date : str
-        Start date in "YYYY-MM" format (e.g., "2025-11").
+        Start date in "MM-YYYY" format (e.g., "11-2025").
         The resulting index will begin at this month.
 
     Returns
@@ -1311,7 +1310,7 @@ def align_prob_with_start_date(merged_df, start_date):
 
     Example
     -------
-    >>> prob_aligned = align_prob_with_start_date(prob, "2025-11")
+    >>> prob_aligned = align_prob_with_start_date(prob, "11-2025")
     >>> prob_aligned.query("lake == 'erie'").head()
                month   lake  prob_exceedance     value
     date
@@ -1329,8 +1328,8 @@ def align_prob_with_start_date(merged_df, start_date):
     if "month_num" not in df.columns:
         df["month_num"] = df["month"].map(month_to_num)
 
-    # Parse the start date (e.g., 2025-11 → year=2025, month=11)
-    start_year, start_month = map(int, start_date.split("-"))
+    # Parse the start date (e.g., 11-2025 → month=11, year=2025)
+    start_month, start_year = map(int, start_date.split("-"))
 
     # Compute year assignment for each month
     # Months >= start_month → same year, months < start_month → next year

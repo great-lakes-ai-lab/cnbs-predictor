@@ -10,14 +10,17 @@ def seconds_in_month(year, month):
     """
     Calculate the number of seconds in a given month of a specific year.
 
-    Parameters:
+    Parameters
+    ----------
     year (int): The year for which the month is being calculated.
     month (int): The month for which the number of seconds is being calculated (1-12).
 
-    Returns:
+    Returns
+    ----------
     int: The number of seconds in the specified month.
 
-    Raises:
+    Raises
+    ----------
     ValueError: If the month is not between 1 and 12.
     """
     # Check if the month is between 1 and 12
@@ -34,14 +37,17 @@ def calculate_grid_cell_areas(lon, lat):
     """
     Calculate the area of each grid cell given latitude and longitude arrays.
 
-    Parameters:
+    Parameters
+    ----------
     lon (array-like): 1D array of longitudes in degrees.
     lat (array-like): 1D array of latitudes in degrees.
 
-    Returns:
+    Returns
+    ----------
     numpy.ndarray: A 2D array of grid cell areas in square meters.
 
-    Raises:
+    Raises
+    ----------
     ValueError: If lat or lon are not 1D arrays.
     """
     
@@ -69,45 +75,48 @@ def calculate_grid_cell_areas(lon, lat):
     
     return area
 
-def calculate_evaporation(temperature_K, latent_heat):
+def calculate_evaporation_rate(temperature_K, latent_heat_flux):
     """
-    Calculate the evaporation rate based on temperature and latent heat.
+    Convert latent heat flux to evaporation rate.
 
-    Parameters:
-    temperature_K (float or array-like): Temperature in Kelvin.
-    latent_heat (float or array-like): Latent heat in W/m².
+    Parameters
+    ----------
+    temperature_K : float or array
+        Air temperature in Kelvin.
 
-    Returns:
-    float or numpy.ndarray: The evaporation rate in kg/m²/s.
+    latent_heat_flux_W_m2 : float or array
+        Latent heat flux in W/m².
 
-    Raises:
-    ValueError: If temperature_K is less than 0 or latent_heat is negative.
+    Returns
+    -------
+    evaporation_rate_mm_s : float or array
+        Evaporation rate in mm/s.
     """
-    # ET = kg/(m²*time^1) or 1 mm
-    # LE = MJ/(M²*time^1)
-    # λ  = MJ/kg
 
-    # Latent heat of vaporization varies slightly with temperature. Allen et al. (1998) provides an equation 
-    # for calculating λ with air temperature variation. Temperature in this case must be in degrees Celcius.
+    # Convert temperature to Celsius
+    temperature_C = temperature_K - 273.15
 
-    # λ=2.501−((2.361×10−3)×(Temp-273.15))
+    # Latent heat of vaporization (MJ/kg)
+    lambda_MJ_kg = 2.501 - 0.002361 * temperature_C
 
-    # latent_heat is in W/m² or J/(m²*time^1). In order to convert to MJ we must multiply by 10^-6 or 
-    # 0.000001. Now lamba and latent_heat are both in terms of MJ.
+    # Convert W/m² -> MJ/(s·m²)
+    latent_heat_flux_MJ = latent_heat_flux * 1e-6
 
-    lamda=(2.501-(0.002361*(temperature_K-273.15)))
-    evaporation_rate=((latent_heat)*0.000001)/lamda
+    # MJ/(s·m²) / MJ/kg = kg/(m²·s) = mm/s
+    evaporation_rate_mm_s = latent_heat_flux_MJ / lambda_MJ_kg
 
-    return evaporation_rate
+    return evaporation_rate_mm_s
 
 def convert_mm_to_cms(df):
     """
     Converts the 'value [mm]' in the dataframe to 'value [cms]' (cubic meters per second) based on lake surface area and the number of seconds in the month.
 
-    Args:
+    Parameters
+    ----------
     - df (pd.DataFrame): DataFrame containing the columns 'value [mm]', 'lake', and a multi-index with 'month' and 'year'.
     
-    Returns:
+    Returns
+    ----------
     - pd.DataFrame: DataFrame with a new column 'value [cms]' representing the value in cubic meters per second.
     """
 
@@ -163,24 +172,65 @@ def load_model(model_name: str, models_info: list):
 
     return joblib.load(path)
 
-def get_first_forecast_month():
+def get_first_forecast_month(date=None):
     """
-    Determine the minimum forecast month based on today's date.
-    If today's day >= 26, use next month; otherwise, use the current month.
+    Determine the minimum forecast month.
+
+    If the day of the month is >= 26, use the next month;
+    otherwise, use the current month.
+
+    Parameters
+    ----------
+    date : str or datetime, optional
+        Input date used for determining the forecast month.
+        If None, today's date is used.
+
+        Accepted string formats:
+            - 'YYYY-MM-DD'
+            - 'YYYYMMDD'
+            - 'YYYY-MM'
 
     Returns
     -------
     str
-        Minimum forecast month in 'YYYY-MM' format.
+        First forecast month in 'YYYY-MM' format.
     """
-    today = datetime.today()
 
-    if today.day >= 26:
-        first_forecast_month = (today + relativedelta(months=1)).strftime("%Y-%m")
+    # Use today's date if none provided
+    if date is None:
+        date = datetime.today()
+
+    # Convert string input to datetime
+    elif isinstance(date, str):
+
+        try:
+            if len(date) == 7:
+                date = datetime.strptime(date, "%Y-%m")
+            elif "-" in date:
+                date = datetime.strptime(date, "%Y-%m-%d")
+            else:
+                date = datetime.strptime(date, "%Y%m%d")
+
+        except ValueError:
+            raise ValueError(
+                "Date format not recognized. "
+                "Use 'YYYY-MM-DD', 'YYYYMMDD', or 'YYYY-MM'."
+            )
+
+    # Ensure datetime-like object
+    elif not isinstance(date, datetime):
+        raise TypeError(
+            "Date must be None, a string, or a datetime object."
+        )
+
+    # Determine forecast month
+    if date.day >= 26:
+        first_forecast_month = (
+            date + relativedelta(months=1)
+        ).strftime("%Y-%m")
     else:
-        first_forecast_month = today.strftime("%Y-%m")
+        first_forecast_month = date.strftime("%Y-%m")
 
-    # Print the first forecast month for debugging
     print(f"First forecast month: {first_forecast_month}")
 
     return first_forecast_month

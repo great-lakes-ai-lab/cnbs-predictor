@@ -1,14 +1,6 @@
 {
-  "id": "aa8a0dc7-92d8-4be3-8aef-b9824b30ac71",
+  "id": "0d6330e3-1665-474d-82fe-c1d622fedec2",
   "var_list": [
-    "superior_swe",
-    "michigan-huron_swe",
-    "erie_swe",
-    "ontario_swe",
-    "superior_sst",
-    "michigan-huron_sst",
-    "erie_sst",
-    "ontario_sst",
     "superior_lake_precipitation",
     "michigan-huron_lake_precipitation",
     "erie_lake_precipitation",
@@ -38,6 +30,6 @@
     "train_start": "1979-01-01",
     "train_end": "2017-12-31"
   },
-  "calculation_date": "2026-05-20 15:49:44.966466",
+  "calculation_date": "2026-06-01 13:04:24.360588",
   "reduction": "monthly_mean"
 }
