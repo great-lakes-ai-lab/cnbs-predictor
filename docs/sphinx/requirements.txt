@@ -1,0 +1,16 @@
+# Documentation-only build dependencies.
+#
+# Deliberately lightweight and pip-only. The heavy/compiled runtime deps
+# (cfgrib, netCDF4, boto3, plotly, ...) are mocked in conf.py via
+# autodoc_mock_imports, so they are NOT needed to build the docs. This keeps
+# the Read the Docs build fast and avoids the compiled conda stack (eccodes).
+#
+# pandas/numpy (and their dep python-dateutil) ARE installed, not mocked:
+# every src module imports pandas, and pandas' C extensions break if dateutil
+# is mocked. Both ship pure pip wheels, so installing them is cheap.
+sphinx>=7,<9
+furo>=2024.1
+myst-parser>=2
+pandas
+numpy
+python-dateutil

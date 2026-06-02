@@ -1,4 +1,9 @@
 # To test use "pytest --capture=no test_data_inputs.py"
+#
+# Every test in this module reaches live external endpoints (NOAA AWS S3 /
+# NCEI). They are marked `network` so the default CI run can exclude them
+# (`pytest -m "not network"`); a scheduled job exercises them separately so a
+# NOAA outage never blocks a PR. Run locally with `pytest -m network`.
 
 import requests
 import boto3
@@ -13,6 +18,9 @@ sys.path.append(os.path.abspath('../../'))
 from src.data_downloader import CFSDownloader
 
 @pytest.mark.integration
+# Applies to every test in this module — see header note.
+pytestmark = pytest.mark.network
+
 class TestURLAvailability:
 
     # Test to check AWS and NCEI URL are accessible

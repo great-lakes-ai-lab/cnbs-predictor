@@ -1,0 +1,45 @@
+---
+# Lightweight environment for running the automated test suite (CI).
+#
+# This is environment.yml with the TensorFlow/Keras pip stack and
+# notebook-only tooling removed. Nothing under src/ or tests/ imports
+# TensorFlow — model inference uses scikit-learn models loaded via joblib —
+# so CI does not need to build the heavy (and Windows-finicky) TF stack.
+#
+# Pins are kept IN SYNC with environment.yml on purpose: tests/unit/
+# test_environment.py asserts the installed versions of cfgrib,
+# scikit-learn, joblib and the Python interpreter match the pins below.
+# If you bump a pin in environment.yml, bump it here too (and vice versa).
+#
+# Training new models still requires the full environment.yml.
+name: nbs_env_test
+channels:
+  - conda-forge
+dependencies:
+  - python==3.12.3
+  - scipy
+  - scikit-learn==1.7.0
+  - beautifulsoup4
+  - boto3
+  - botocore
+  - cfgrib==0.9.15.0
+  - pandas
+  - netcdf4
+  - numpy
+  - joblib==1.5.2
+  - matplotlib
+  - pillow
+  - plotly
+  - properscoring
+  - pytest
+  - requests
+  - requests-toolbelt
+  - setuptools
+  - sqlite
+  - tabulate
+  - urllib3
+  - zlib
+  - pyyaml
+  - xarray
+  - xgboost
+  - pip

@@ -1,9 +1,8 @@
 # nbs-predictor
 ![License](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)
-![Version](https://img.shields.io/github/release/great-lakes-ai-lab/REPOSITORY.svg)
-![Contributors](https://img.shields.io/github/contributors/great-lakes-ai-lab/cnbs-predictor)
-![Issues](https://img.shields.io/github/issues/great-lakes-ai-lab/cnbs-predictor)
-![Pull Requests](https://img.shields.io/github/issues-pr/great-lakes-ai-lab/cnbs-predictor)
+![Version](https://img.shields.io/badge/release-v1.2.0-blue.svg)
+[![tests](https://github.com/great-lakes-ai-lab/cnbs-predictor/actions/workflows/tests.yml/badge.svg?branch=main)](https://github.com/great-lakes-ai-lab/cnbs-predictor/actions/workflows/tests.yml)
+[![Documentation Status](https://app.readthedocs.org/projects/cnbs-predictor/badge/?version=latest)](https://cnbs-predictor.readthedocs.io/en/latest/)
 
 <p align="center">
   <img src="assets/logo.png" alt="cnbs-logo" width="150"/>
