@@ -1,0 +1,30 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+title: "cnbs-predictor"
+abstract: >-
+  A tool to forecast the components of Net Basin Supply (NBS) —
+  precipitation, evaporation, runoff, and NBS — for the Laurentian Great
+  Lakes, using NOAA Climate Forecast System (CFS) data out to twelve months
+  at monthly intervals.
+type: software
+authors:
+  - family-names: Fitzpatrick
+    given-names: Lindsay
+    # orcid: "https://orcid.org/0000-0000-0000-0000"   # TODO: add if available
+    # affiliation: "Cooperative Institute for Great Lakes Research, University of Michigan" 
+  - family-names: Jones
+    given-names: Dani
+    # orcid: "https://orcid.org/0000-0000-0000-0000"   # TODO: add if available
+    # affiliation: "Cooperative Institute for Great Lakes Research, University of Michigan"                 
+repository-code: "https://github.com/great-lakes-ai-lab/cnbs-predictor"
+url: "https://cnbs-predictor.readthedocs.io/"
+license: AGPL-3.0
+version: "1.2.0"
+# date-released: "YYYY-MM-DD"   # TODO: set to the v1.2.0 release date if you want it cited
+keywords:
+  - Great Lakes
+  - Net Basin Supply
+  - hydrology
+  - seasonal forecasting
+  - machine learning
+  - Climate Forecast System

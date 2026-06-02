@@ -9,6 +9,7 @@ from botocore.config import Config
 from concurrent.futures import ThreadPoolExecutor
 from io import StringIO
 import pandas as pd
+import numpy as np
 
 from src.utilities import check_url_exists
 
@@ -426,54 +427,4 @@ class SSTDownloader:
         elif units.upper() != "C":
             raise ValueError("Unsupported units. Use 'C' for Celsius or 'K' for Kelvin.")
 
-        # --- Determine the date range ---
-        if end_date is None:
-            end_date = pd.Timestamp(datetime.now().date() - timedelta(days=1))
-        else:
-            end_date = pd.Timestamp(end_date)
-
-        if start_date is None:
-            start_date = end_date - pd.DateOffset(months=9)
-        else:
-            start_date = pd.Timestamp(start_date)
-
-        # --- Subset available data ---
-        df_period = df.loc[(df.index >= start_date) & (df.index <= end_date)]
-
-        # --- Generate full daily index ---
-        full_index = pd.date_range(start=start_date, end=end_date, freq="D")
-        missing_dates = full_index.difference(df_period.index)
-
-        # --- Handle missing data ---
-        if not missing_dates.empty:
-            print(f"⚠️ Warning: Missing {len(missing_dates)} days between {start_date.date()} and {end_date.date()}.")
-
-            if climatology_csv:
-                print("Filling missing values using climatology data.")
-                clim = pd.read_csv(climatology_csv, sep='\t')
-                if "dayofyear" not in clim.columns:
-                    raise ValueError("Climatology CSV must have a 'dayofyear' column.")
-                clim = clim.set_index("dayofyear")
-
-                fill_df = pd.DataFrame(index=missing_dates)
-                fill_df["dayofyear"] = fill_df.index.dayofyear
-
-                for col in df_period.columns:
-                    fill_df[col] = fill_df["dayofyear"].map(clim[col])
-
-                fill_df = fill_df.drop(columns="dayofyear")
-            else:
-                print("No climatology file provided — filling missing days with NaN.")
-                # Create NaN DataFrame but preserve column dtypes
-                fill_df = pd.DataFrame(index=missing_dates)
-                for col in df_period.columns:
-                    fill_df[col] = np.nan
-                    fill_df[col] = fill_df[col].astype(df_period[col].dtype)
-
-            # Merge and sort
-            df_period = pd.concat([df_period, fill_df]).sort_index()
-
-        # --- Reindex to ensure continuous range ---
-        df_period = df_period.reindex(full_index)
-
-        return df_period
+        return df
