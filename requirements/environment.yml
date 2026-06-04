@@ -12,7 +12,6 @@ dependencies:
   - botocore
   - cfgrib==0.9.15.0
   - pandas
-  - netcdf4
   - numpy
   - joblib==1.5.2
   - jupyter
@@ -42,6 +41,7 @@ dependencies:
       - libclang
       - markdown
       - markdown-it-py
+      - netCDF4
       - tensorboard
       - tensorboard-data-server
       - tensorflow==2.20.0
