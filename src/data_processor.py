@@ -733,21 +733,21 @@ class CFSTransformer:
         self.df = df.copy()
 
 
-    def filter(self, today=None, months_back=9):
+    def filter(self, date=None, months_back=9):
         """
         Filter rows to keep only CFS runs going back a specified number
         of months from the current operational forecast month.
 
         Rules
         -----
-        - If today's day is before the 26th, use the current month.
-        - If today's day is on or after the 26th, use the following month.
+        - If date is before the 26th, use the current month.
+        - If date's day is on or after the 26th, use the following month.
         - Then go back `months_back` months.
         - Keep rows where cfs_run is greater than or equal to that start date.
 
         Parameters
         ----------
-        today : datetime, optional
+        date : datetime, optional
             Reference date. Defaults to current date if None.
 
         months_back : int, default=9
@@ -761,15 +761,15 @@ class CFSTransformer:
 
         df = self.df.copy()
 
-        if today is None:
-            today = datetime.today()
+        if date is None:
+            date = datetime.today()
 
         # Determine operational forecast month
-        if today.day < 26:
-            forecast_month = datetime(today.year, today.month, 1)
+        if date.day < 26:
+            forecast_month = datetime(date.year, date.month, 1)
         else:
             forecast_month = (
-                pd.Timestamp(today.year, today.month, 1)
+                pd.Timestamp(date.year, date.month, 1)
                 + pd.DateOffset(months=1)
             )
 
@@ -831,63 +831,69 @@ class CFSTransformer:
     def structure_input(self):
         """
         Transforms a long-format CFS forecast DataFrame into a wide-format one.
-
-        Parameters:
-            mode (str): "absolute" or "anomaly"
-            scp (SeasonalCycleProcessor): required if mode="anomaly"
-
-        Returns:
-            pd.DataFrame: A wide-format DataFrame where each column corresponds to a specific lake, 
-            variable type, and forecast month.
         """
+
         data = self.df.copy()
 
-        # In the past I have used "value [mm]" and tried to switch it to "value"
+        # Resolve value column
         value_col = "value [mm]" if "value [mm]" in data.columns else "value"
 
-        data['cfs_run'] = pd.to_datetime(data['cfs_run'], format='%Y%m%d%H')
-
-        data['forecast_date'] = pd.to_datetime(
-            dict(year=data['year'], month=data['month'], day=1)
+        # --- Ensure cfs_run is datetime (critical for pivot stability) ---
+        data["cfs_run"] = pd.to_datetime(
+            data["cfs_run"].astype(str),
+            format="%Y%m%d%H",
+            errors="raise"
         )
 
-        data['forecast_month'] = (
-            (data['forecast_date'].dt.year - data['cfs_run'].dt.year) * 12 +
-            (data['forecast_date'].dt.month - data['cfs_run'].dt.month)
+        # --- Build forecast date ---
+        data["forecast_date"] = pd.to_datetime(
+            dict(year=data["year"], month=data["month"], day=1)
         )
 
-        data.drop(columns='forecast_date', inplace=True)
-
-        # Column naming
-        data['column_name'] = (
-            data['lake'] + '_' +
-            data['surface_type'] + '_' +
-            data['component'] + '_mo' +
-            data['forecast_month'].astype(str)
+        # --- Compute forecast month index ---
+        data["forecast_month"] = (
+            (data["forecast_date"].dt.year - data["cfs_run"].dt.year) * 12 +
+            (data["forecast_date"].dt.month - data["cfs_run"].dt.month)
         )
 
-        # Use value_col instead of hardcoded column
-        df_wide = data.pivot(
-            index='cfs_run',
-            columns='column_name',
-            values=value_col
+        data.drop(columns="forecast_date", inplace=True)
+
+        # --- Build deterministic column names ---
+        data["column_name"] = (
+            data["lake"] + "_" +
+            data["surface_type"] + "_" +
+            data["component"] + "_mo" +
+            data["forecast_month"].astype(str)
         )
 
-        df_wide = df_wide.loc[:, ~df_wide.columns.str.endswith('_mo10')]
-        df_wide.dropna(inplace=True)
+        # --- Pivot safely ---
+        df_wide = data.pivot_table(
+            index="cfs_run",
+            columns="column_name",
+            values=value_col,
+            aggfunc="first"
+        )
+
+        # --- Remove unwanted forecast horizon ---
+        df_wide = df_wide.loc[:, ~df_wide.columns.astype(str).str.endswith("_mo10")]
+
+        # --- Ensure all values are float-ready + consistent ---
         df_wide.columns.name = None
 
-        feature_column_order = (
-            [
-                f'{lake}_{surface_type}_{comp}_mo{m}'
-                for lake in ['superior', 'michigan-huron', 'erie', 'ontario']
-                for surface_type in ['lake', 'land']
-                for comp in ['precipitation', 'evaporation', 'air_temperature']
-                for m in range(10)
-            ]
-        )
+        # --- Enforce required deterministic ordering ---
+        feature_column_order = [
+            f"{lake}_{surface_type}_{comp}_mo{m}"
+            for lake in ["superior", "michigan-huron", "erie", "ontario"]
+            for surface_type in ["lake", "land"]
+            for comp in ["precipitation", "evaporation", "air_temperature"]
+            for m in range(10)
+        ]
 
-        df_final = df_wide[feature_column_order]
+        # --- Ensure columns are in the correct order ---
+        df_wide = df_wide.reindex(columns=feature_column_order)
+
+        # --- Drop rows with missing required features AFTER alignment ---
+        df_final = df_wide.dropna()
 
         return df_final
 
@@ -989,12 +995,10 @@ class CFSTransformer:
 
             # Convert months to numpy array for vectorized operations
             month = out.index.month.to_numpy()
-
             # Encode month as cyclical sine/cosine coordinates
             out["month_sin"] = np.sin(
                 2 * np.pi * month / 12
             )
-
             out["month_cos"] = np.cos(
                 2 * np.pi * month / 12
             )
@@ -1015,7 +1019,6 @@ class CFSTransformer:
                 out.index.year.to_numpy()
                 + (out.index.month.to_numpy() - 1) / 12.0
             )
-
             # Shift to start at zero for numerical stability
             time = t - t.min()
 
@@ -1023,19 +1026,15 @@ class CFSTransformer:
             # Optional standardization
             # -----------------------------------------------------
             if normalize_time:
-
                 time_std = time.std()
-
                 # Avoid divide-by-zero for constant arrays
                 if time_std == 0:
                     time = np.zeros_like(time)
-
                 else:
                     time = (
                         (time - time.mean())
                         / time_std
                     )
-
             out["time"] = time
 
         return out

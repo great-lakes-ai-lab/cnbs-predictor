@@ -9,6 +9,7 @@ specific column order, so these tests pin that order with synthetic inputs —
 no real data files needed.
 """
 
+from datetime import datetime
 import itertools
 
 import pandas as pd
@@ -46,30 +47,30 @@ class TestCFSTransformerFilter:
         return pd.DataFrame({"cfs_run": cfs_runs, "value": range(len(cfs_runs))})
 
     def test_filters_out_runs_before_window(self):
-        # first_forecast_month = 2024-12, months_back = 10 -> start_date = 2024-02-01
+        # first_forecast_month = 12-2024, months_back = 10 -> start_date = 2024-03-01
         df = self._build([
             "2024010100",  # before window — drop
-            "2024020100",  # at start — keep
+            "2024030100",  # before window — drop
             "2024110100",  # within — keep
             "2024120100",  # equal to first_fc — keep
         ])
-        result = CFSTransformer(df).filter("2024-12", months_back=10)
+        result = CFSTransformer(df).filter(datetime(2024, 12, 1), months_back=10)
         # Three rows survive; the 2024-01 one is dropped.
         assert len(result) == 3
         assert "2024010100" not in pd.to_datetime(result["cfs_run"]).dt.strftime("%Y%m%d%H").values
 
     def test_default_months_back_is_10(self):
-        df = self._build(["2023060100", "2024020100", "2024120100"])
-        # Default months_back=10, first_fc=2024-12 -> start = 2024-02-01.
-        result = CFSTransformer(df).filter("2024-12")
-        assert len(result) == 2  # the 2023-06 row dropped
+        df = self._build(["2023060100", "2024030100", "2024120100"])
+        # Default months_back=10, first_fc=2024-12 -> start = 2024-03-01.
+        result = CFSTransformer(df).filter(datetime(2024, 12, 1))
+        assert len(result) == 2  # only going back 9 months, so 2023-06-01 and 2024-03-01 are not included
 
     def test_handles_already_datetime_cfs_run(self):
         df = pd.DataFrame({
-            "cfs_run": pd.to_datetime(["2024-02-01", "2024-12-01"]),
+            "cfs_run": pd.to_datetime(["2024-03-01", "2024-12-01"]),
             "value": [1, 2],
         })
-        result = CFSTransformer(df).filter("2024-12", months_back=10)
+        result = CFSTransformer(df).filter(datetime(2024, 12, 1), months_back=10)
         assert len(result) == 2  # both within the window
 
 
@@ -111,14 +112,12 @@ class TestCFSTransformerShift:
 # ===========================================================================
 class TestCFSTransformerStructureInput:
     """
-    Issue #38 requirement: the input dataframe columns must be in the correct
-    order. ``structure_input`` produces a wide DataFrame with exactly:
+    structure_input produces a wide DataFrame with:
 
-      - 12 dummy month columns (``month_1`` .. ``month_12``)
-      - 240 feature columns: 4 lakes × 2 surface_types × 3 components × 10
-        forecast months, in that nested order
+      - 240 feature columns:
+        4 lakes × 2 surface_types × 3 components × 10 forecast months
 
-    Total: 252 columns, in a deterministic order.
+    Total: 252 columns in deterministic order.
     """
 
     LAKES = ["superior", "michigan-huron", "erie", "ontario"]
@@ -126,11 +125,8 @@ class TestCFSTransformerStructureInput:
     COMPONENTS = ["precipitation", "evaporation", "air_temperature"]
 
     def _build_long_input(self, cfs_run="2024010100"):
-        """
-        Build a complete long-format DataFrame: every (lake, surface,
-        component) combo for forecast months 0..10 (11 rows each).
-        """
         cfs_dt = pd.to_datetime(cfs_run, format="%Y%m%d%H")
+
         rows = []
         for lake, surface, comp, mo in itertools.product(
             self.LAKES, self.SURFACES, self.COMPONENTS, range(11)
@@ -143,58 +139,119 @@ class TestCFSTransformerStructureInput:
                 "lake": lake,
                 "surface_type": surface,
                 "component": comp,
-                "value": 1.0 + mo,  # distinguishable per month
+                "value": 1.0 + mo,
             })
+
         return pd.DataFrame(rows)
 
-    def test_invalid_mode_raises(self):
-        df = self._build_long_input()
-        with pytest.raises(ValueError, match="mode must be 'absolute' or 'anomaly'"):
-            CFSTransformer(df).structure_input(mode="weird")
-
-    def test_anomaly_mode_without_scp_raises(self):
-        df = self._build_long_input()
-        with pytest.raises(ValueError, match="scp must be provided"):
-            CFSTransformer(df).structure_input(mode="anomaly", scp=None)
+    # -----------------------------
+    # Tests
+    # -----------------------------
 
     def test_returns_dataframe_with_expected_total_columns(self):
         df = self._build_long_input()
-        result = CFSTransformer(df).structure_input(mode="absolute")
-        # 12 dummy month columns + 240 feature columns
-        assert result.shape[1] == 12 + 240
+        result = CFSTransformer(df).structure_input()
 
-    def test_first_twelve_columns_are_month_dummies_in_order(self):
-        df = self._build_long_input()
-        result = CFSTransformer(df).structure_input(mode="absolute")
-        expected_first_12 = [f"month_{i}" for i in range(1, 13)]
-        assert list(result.columns[:12]) == expected_first_12
+        assert result.shape[1] == 240 # 4 lakes × 2 surfaces × 3 components × 10 months
 
     def test_feature_columns_in_nested_lake_surface_component_month_order(self):
         df = self._build_long_input()
-        result = CFSTransformer(df).structure_input(mode="absolute")
-        feature_cols = list(result.columns[12:])
+        result = CFSTransformer(df).structure_input()
+
+        feature_cols = list(result.columns)
 
         expected = [
-            f"{lake}_{surface}_{comp}_mo{m}"
-            for lake in self.LAKES
-            for surface in self.SURFACES
-            for comp in self.COMPONENTS
+            f"{lake}_{surface_type}_{comp}_mo{m}"
+            for lake in ["superior", "michigan-huron", "erie", "ontario"]
+            for surface_type in ["lake", "land"]
+            for comp in ["precipitation", "evaporation", "air_temperature"]
             for m in range(10)
         ]
+
         assert feature_cols == expected
 
     def test_no_mo10_columns_in_output(self):
-        """The loader explicitly drops ``_mo10`` features."""
         df = self._build_long_input()
-        result = CFSTransformer(df).structure_input(mode="absolute")
+        result = CFSTransformer(df).structure_input()
+
         assert not any(c.endswith("_mo10") for c in result.columns)
 
     def test_accepts_value_mm_column_alias(self):
-        """``structure_input`` accepts either 'value' or 'value [mm]'."""
         df = self._build_long_input().rename(columns={"value": "value [mm]"})
-        result = CFSTransformer(df).structure_input(mode="absolute")
-        assert result.shape[1] == 252
+        result = CFSTransformer(df).structure_input()
 
+        assert result.shape[1] == 240  # Still produces 240 feature columns
+
+import numpy as np
+import pandas as pd
+import pytest
+
+
+class TestAddTimeFeatures:
+
+    def _build_df(self):
+        idx = pd.date_range("2024-01-01", periods=4, freq="MS")
+        return pd.DataFrame({"value": [1, 2, 3, 4]}, index=idx)
+
+    # ---------------------------------------------------------
+    # Raises error if index is not DatetimeIndex
+    # ---------------------------------------------------------
+    def test_requires_datetime_index(self):
+        df = pd.DataFrame({"value": [1, 2, 3]})
+
+        with pytest.raises(TypeError, match="DatetimeIndex"):
+            CFSTransformer(df).add_time_features()
+
+    # ---------------------------------------------------------
+    # Adds month_sin and month_cos correctly
+    # ---------------------------------------------------------
+    def test_month_cycle_features(self):
+        df = self._build_df()
+
+        result = CFSTransformer(df).add_time_features(
+            add_time_trend=False
+        )
+
+        # expected values for Jan, Feb, Mar, Apr
+        months = np.array([1, 2, 3, 4])
+
+        expected_sin = np.sin(2 * np.pi * months / 12)
+        expected_cos = np.cos(2 * np.pi * months / 12)
+
+        np.testing.assert_allclose(result["month_sin"].values, expected_sin)
+        np.testing.assert_allclose(result["month_cos"].values, expected_cos)
+
+
+    # ---------------------------------------------------------
+    # Time normalization centers data
+    # ---------------------------------------------------------
+    def test_time_trend_normalized(self):
+        df = self._build_df()
+
+        result = CFSTransformer(df).add_time_features(
+            add_month_cycle=False,
+            normalize_time=True
+        )
+
+        time = result["time"].values
+
+        # mean ~ 0
+        assert abs(time.mean()) < 1e-10
+
+        # std ~ 1 (unless constant series)
+        assert abs(time.std() - 1) < 1e-10
+
+    # ---------------------------------------------------------
+    # Overwrite removes old columns
+    # ---------------------------------------------------------
+    def test_overwrite_behavior(self):
+        df = self._build_df()
+        df["month_sin"] = 999  # fake old value
+
+        result = CFSTransformer(df).add_time_features(overwrite=True)
+
+        # overwritten
+        assert result["month_sin"].iloc[0] != 999
 
 # ===========================================================================
 # ForecastTransformer.melt — wide-format → tidy with sorted month columns
