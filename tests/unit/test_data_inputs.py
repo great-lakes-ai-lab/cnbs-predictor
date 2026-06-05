@@ -17,8 +17,11 @@ import sys
 sys.path.append(os.path.abspath('../../'))
 from src.data_downloader import CFSDownloader
 
-# Applies to every test in this module — see header note.
-pytestmark = pytest.mark.network
+# Edit to include both network and integration markers
+pytestmark = [
+    pytest.mark.network,
+    pytest.mark.integration,
+]
 
 class TestURLAvailability:
 
@@ -69,6 +72,7 @@ from botocore.config import Config
 import requests
 from bs4 import BeautifulSoup
 
+@pytest.mark.integration
 class TestCFSDataAvailability:
     """
     Unit test that verifies today's (or yesterday's) Climate Forecast System (CFSv2)
@@ -138,6 +142,7 @@ class TestCFSDataAvailability:
         captured = capsys.readouterr()
         print(captured.out)
 
+@pytest.mark.integration
 class TestDataDownloader:
 
     def test_cfs_downloader_function(self, tmp_path):
