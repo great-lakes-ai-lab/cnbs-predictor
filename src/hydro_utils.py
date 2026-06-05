@@ -87,6 +87,13 @@ def calculate_evaporation_rate(temperature_K, latent_heat_flux):
     latent_heat_flux_W_m2 : float or array
         Latent heat flux in W/m².
 
+    Notes:
+    No input validation is performed. Negative ``temperature_K`` or
+    ``latent_heat`` values will produce numerically valid but physically
+    meaningless results — callers are responsible for sanity-checking inputs.
+    Sub-optimal: a future revision should raise ``ValueError`` for inputs
+    outside physical ranges.
+    
     Returns
     -------
     evaporation_rate_mm_s : float or array
@@ -118,6 +125,13 @@ def convert_mm_to_cms(df):
     Returns
     ----------
     - pd.DataFrame: DataFrame with a new column 'value [cms]' representing the value in cubic meters per second.
+
+    Notes:
+    Recognized lake names are 'superior', 'michigan-huron', 'erie', and
+    'ontario'. Any other value in the 'lake' column silently yields a
+    'value [cms]' of 0 (surface area defaults to 0 via ``dict.get``).
+    Sub-optimal: a future revision should raise on unknown lake names
+    rather than masking the issue with zeros.
     """
 
     # Dictionary storing the surface area (in square meters) for each lake
