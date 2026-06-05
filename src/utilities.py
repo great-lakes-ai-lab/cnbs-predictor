@@ -128,6 +128,13 @@ def create_directory(directory):
 def get_files(directory, affix, identifier):
         """
         Get a list of all files in the specified directory that match the given prefix or suffix.
+
+        Notes
+        -----
+        Sub-optimal: this function is missing a ``return files`` statement and
+        therefore always implicitly returns ``None`` regardless of what it
+        finds. Callers currently get nothing back. A future revision should
+        add the return statement so the matched paths are actually exposed.
         """
         files = []
         for file_name in os.listdir(directory):
