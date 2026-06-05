@@ -1,0 +1,6 @@
+[tool.pytest.ini_options]
+# Tests live under tests/; src/ is importable via tests/conftest.py.
+testpaths = ["tests"]
+markers = [
+    "network: test reaches live external endpoints (NOAA AWS / NCEI). Excluded from the default CI run; exercised on a schedule instead. Run locally with `pytest -m network`.",
+]

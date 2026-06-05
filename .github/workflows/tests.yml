@@ -1,0 +1,120 @@
+name: tests
+
+# Runs the automated test suite on a lightweight conda environment
+# (environment-test.yml — no TensorFlow). Two jobs:
+#   * test    — fast, deterministic suite on every PR / push to main. Gates merges.
+#   * network — the live NOAA/AWS reachability tests, on a daily schedule only,
+#               so an upstream outage never blocks a PR. On failure it opens a
+#               (de-duplicated) tracking issue so the team hears about upstream
+#               changes without watching the Actions tab.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # 07:13 UTC daily — off the top of the hour on purpose.
+    - cron: "13 7 * * *"
+  workflow_dispatch: {}
+
+# A newer push to the same branch cancels an in-flight run.
+concurrency:
+  group: tests-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    # Deterministic suite: everything except the live-network tests.
+    # Skipped on the scheduled trigger (that's the network job's slot).
+    if: github.event_name != 'schedule'
+    name: unit tests (no network)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash -el {0}   # login shell so `conda activate` works
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up conda (environment-test.yml)
+        uses: conda-incubator/setup-miniconda@v4
+        with:
+          environment-file: requirements/environment-test.yml
+          activate-environment: nbs_env_test
+          miniforge-version: latest
+          channels: conda-forge
+          channel-priority: strict
+          conda-remove-defaults: true
+
+      - name: Show resolved environment
+        run: conda list
+
+      - name: Run tests (excluding network)
+        run: pytest tests/ -m "not network" -v
+
+  network:
+    # Live NOAA AWS / NCEI reachability. Scheduled (and manually dispatchable)
+    # only — never on PRs. A red run here means "upstream data moved/outage",
+    # which is worth knowing but must not block development.
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    name: network tests (scheduled)
+    runs-on: ubuntu-latest
+    # Needed by the failure step below so the built-in token can open an issue.
+    permissions:
+      contents: read
+      issues: write
+    defaults:
+      run:
+        shell: bash -el {0}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up conda (environment-test.yml)
+        uses: conda-incubator/setup-miniconda@v4
+        with:
+          environment-file: requirements/environment-test.yml
+          activate-environment: nbs_env_test
+          miniforge-version: latest
+          channels: conda-forge
+          channel-priority: strict
+          conda-remove-defaults: true
+
+      - name: Run network tests
+        run: pytest tests/ -m network -v
+
+      # If the live tests failed, surface it as a tracked issue so the team
+      # hears about upstream changes (URL move, bucket rename, API drift)
+      # without anyone having to watch the Actions tab. De-duplicated: a single
+      # open issue covers a multi-day outage rather than one issue per night.
+      - name: Open an issue on failure
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          # Ensure the tracking label exists (no-op if it already does).
+          gh label create network-test-failure \
+            --color B60205 \
+            --description "Scheduled live NOAA/AWS network test failed" 2>/dev/null || true
+
+          # Skip if an open issue with this label already exists (anti-spam).
+          existing=$(gh issue list --label network-test-failure --state open \
+            --json number --jq 'length')
+          if [ "${existing:-0}" -ne 0 ]; then
+            echo "An open network-test-failure issue already exists; not creating a duplicate."
+            exit 0
+          fi
+
+          gh issue create \
+            --title "🔴 Scheduled network test failed ($(date -u +%Y-%m-%d))" \
+            --label network-test-failure \
+            --body "The scheduled \`network\` job failed. Upstream NOAA AWS (\`noaa-cfs-pds\`) or NCEI may have changed — e.g. a URL move, bucket rename, or API-shape drift — or it could be a transient outage.
+
+          **Run log:** ${RUN_URL}
+
+          To investigate locally:
+          \`\`\`bash
+          pytest tests/ -m network -v
+          \`\`\`
+
+          Close this issue once the cause is resolved; the next failure will open a fresh one."
