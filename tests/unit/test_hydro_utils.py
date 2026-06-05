@@ -13,7 +13,7 @@ import pytest
 from src.hydro_utils import (
     seconds_in_month,
     calculate_grid_cell_areas,
-    calculate_evaporation,
+    calculate_evaporation_rate,
     convert_mm_to_cms,
 )
 
@@ -81,11 +81,11 @@ class TestCalculateGridCellAreas:
 
 
 # ---------------------------------------------------------------------------
-# calculate_evaporation
+# calculate_evaporation_rate
 # ---------------------------------------------------------------------------
 class TestCalculateEvaporation:
     def test_scalar_inputs_return_scalar(self):
-        result = calculate_evaporation(temperature_K=288.15, latent_heat=2_500_000.0)
+        result = calculate_evaporation_rate(temperature_K=288.15, latent_heat_flux=2_500_000.0)
         # latent_heat W/m² * 1e-6 / lambda(MJ/kg)  -> kg/(m²·s)
         # at 15°C: lambda = 2.501 - 0.002361*15 = 2.46557
         expected = (2_500_000.0 * 1e-6) / (2.501 - 0.002361 * 15.0)
@@ -94,17 +94,17 @@ class TestCalculateEvaporation:
     def test_array_inputs_return_array(self):
         T = np.array([273.15, 288.15, 303.15])
         LE = np.array([1e6, 2e6, 3e6])
-        result = calculate_evaporation(T, LE)
+        result = calculate_evaporation_rate(T, LE)
         assert isinstance(result, np.ndarray)
         assert result.shape == T.shape
         assert (result > 0).all()
 
     def test_zero_latent_heat_gives_zero_evaporation(self):
-        assert calculate_evaporation(288.15, 0.0) == 0.0
+        assert calculate_evaporation_rate(288.15, 0.0) == 0.0
 
     def test_higher_latent_heat_means_more_evaporation(self):
-        low = calculate_evaporation(288.15, 1e6)
-        high = calculate_evaporation(288.15, 2e6)
+        low = calculate_evaporation_rate(288.15, 1e6)
+        high = calculate_evaporation_rate(288.15, 2e6)
         assert high > low
 
 

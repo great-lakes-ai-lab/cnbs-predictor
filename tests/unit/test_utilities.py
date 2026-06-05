@@ -50,30 +50,30 @@ class TestCheckUrlExists:
 class TestGetFirstForecastMonth:
     def test_before_26th_returns_current_month(self):
         result = get_first_forecast_month(today=datetime(2024, 6, 10))
-        assert result == "2024-06"
+        assert result == "06-2024"
 
     def test_on_25th_still_current_month(self):
         # Boundary: rule says "before 26th" -> current month
         result = get_first_forecast_month(today=datetime(2024, 6, 25))
-        assert result == "2024-06"
+        assert result == "06-2024"
 
     def test_on_26th_rolls_to_next_month(self):
         result = get_first_forecast_month(today=datetime(2024, 6, 26))
-        assert result == "2024-07"
+        assert result == "07-2024"
 
     def test_after_26th_rolls_to_next_month(self):
         result = get_first_forecast_month(today=datetime(2024, 6, 30))
-        assert result == "2024-07"
+        assert result == "07-2024"
 
     def test_december_rollover_to_next_year(self):
         result = get_first_forecast_month(today=datetime(2024, 12, 27))
-        assert result == "2025-01"
+        assert result == "01-2025"
 
     def test_default_today_runs_without_error(self):
         # No assertion on value (date-dependent), just that the default path works.
         result = get_first_forecast_month()
         assert isinstance(result, str)
-        assert len(result) == 7 and result[4] == "-"
+        assert len(result) == 7 and result[2] == "-"
 
 
 # ---------------------------------------------------------------------------
@@ -145,12 +145,6 @@ class TestCreateDirectory:
 # get_files
 # ---------------------------------------------------------------------------
 class TestGetFiles:
-    """
-    Known bug: ``get_files`` is missing a ``return files`` statement and
-    therefore always returns ``None``. These tests pin that current behavior;
-    once the return is added, flip them to assert on the file list contents.
-    """
-
     def _populate(self, tmp_path):
         (tmp_path / "alpha.csv").write_text("x")
         (tmp_path / "beta.csv").write_text("x")
@@ -158,14 +152,25 @@ class TestGetFiles:
         (tmp_path / "gamma.log").write_text("x")
         return tmp_path
 
-    def test_suffix_match_currently_returns_none(self, tmp_path):
+    def test_suffix_match_returns_csv_files(self, tmp_path):
         d = self._populate(tmp_path)
-        assert get_files(str(d), affix="suffix", identifier=".csv") is None
+        result = get_files(str(d), affix="suffix", identifier=".csv")
+        expected = [
+            str(d / "alpha.csv"),
+            str(d / "beta.csv"),
+        ]
+        assert sorted(result) == sorted(expected)
 
-    def test_prefix_match_currently_returns_none(self, tmp_path):
+    def test_prefix_match_returns_alpha_files(self, tmp_path):
         d = self._populate(tmp_path)
-        assert get_files(str(d), affix="prefix", identifier="alpha") is None
+        result = get_files(str(d), affix="prefix", identifier="alpha")
+        expected = [
+            str(d / "alpha.csv"),
+            str(d / "alpha.txt"),
+        ]
+        assert sorted(result) == sorted(expected)
 
-    def test_no_match_currently_returns_none(self, tmp_path):
+    def test_no_match_returns_empty_list(self, tmp_path):
         d = self._populate(tmp_path)
-        assert get_files(str(d), affix="suffix", identifier=".nope") is None
+        result = get_files(str(d), affix="suffix", identifier=".nope")
+        assert result == []
