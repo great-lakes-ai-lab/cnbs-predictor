@@ -1,5 +1,5 @@
 {
-  "id": "5dad3e1a-e7a4-4938-93b4-2ccb8e75e2f5",
+  "id": "4e79eafd-a103-4422-bf42-c939ed1f0913",
   "var_list": [
     "superior_target_evaporation",
     "superior_target_precipitation",
@@ -23,6 +23,6 @@
     "train_end": "2017-12-31",
     "note": "targets climatology fit on training period only"
   },
-  "calculation_date": "2026-06-01 13:04:24.835181",
+  "calculation_date": "2026-06-04 09:40:55.241083",
   "reduction": "monthly_mean"
 }

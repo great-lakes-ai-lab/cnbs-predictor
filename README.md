@@ -67,7 +67,7 @@ On a **Windows** computer, you will need to open the **Anaconda Prompt**.
     conda activate nbs_env
     ```
 
-3. **Set Up Jupyter Kernel**: Register the Conda environment as a Jupyter kernel.
+3. **Set Up Jupyter Kernel**: Register the Conda environment as a Jupyter kernel. This is a one time step. After initial set up, you will not need to run this command again.
 
     ```bash
     python -m ipykernel install --user --name nbs_env --display-name "Python (nbs_env)"
@@ -85,13 +85,17 @@ jupyter lab
 
 #### Working with Notebooks
 1. After starting Jupyter Lab, a new browser window should open.
-2. Navigate to the notebooks/production/ directory.
-3. Open the appropriate notebook (e.g., 2_LEF_forecast_model.ipynb). Note that there are separate notebooks for:
-    - Forecast model training (not needed for most users), 
-    - Downloading and preprocessing input data from NOAA CFS and other sources, and 
-    - Generating forecasts. 
-4. Set your directory paths in the "User Input" section.
-5. Run the notebook to generate forecasts.
+2. On the left, navigate to the notebooks/production/ directory.
+3. First time users who do not have the trained model files (e.g. data/input/models/GP_trained_model_anom.joblib) will need to first run `0_LEF_model_training_anomalies.ipynb`. This script will create and train the scalers, models, and attributes and save them to the appropriate folders. If you already have the required files, skip to step 8.
+4. Set your local directory paths in the **User Input** section.
+5. Double check the kernel in the top right shows `Python (nbs_env)`. If it does not, click on it to switch kernels. You can also mark "Always start the preferred kernel" to force it to always start with the nbs_env environment.
+6. Run the notebook by clicking on the ▶▶ symbol to run all cells or the ▶ to run one cell at a time.
+7. You should now have joblib files under models, scalers, and csv/json files under climatology.
+8. Open `1_LEF_download_preprocess.ipynb`. Set your local directory paths in the **User Input** section.
+9. Run the notebook. This will download CFS data to the specified directory, process the data, and save it to a database `cfs_forecast_data.db`. If you have a database started, you can set **auto** to 'yes' in the notebook and it will automatically pull the last date in the database and pick up where it left off, bringing the database up-to-date. If you are starting a database from scratch, the script will automatically begin downloading CFS data from 9 months prior until today. You can also set **auto** to 'no' and set the specified date range to download and process CFS data. This script takes a while to run, depending on how much data it needs to download and process.
+10. Open `2_LEF_forecast_model.ipynb`. Set your local directory paths in the **User Input** section.
+11. Run the notebook. This will read in the CFS database, run the data through the saved trained models, and produce a 12 month forecast for **precipitation, evaporation, runoff,** and **NBS**.
+12. Script `3_LEF_visualization.ipynb` is an optional notebook you can run to create timeseries plots of the forecast data created in script 2.
 
 ## Project Structure
 
@@ -106,15 +110,15 @@ cnbs-predictor/
 │   ├── glsea                                   # GLSEA Sea Surface Temperatures for the Great Lakes
 │   ├── input                                   # Model inputs for forecasting (ML models, scalers, masks, etc.)
 │   ├── l2swbm                                  # L2SWBM target data (P, E, R)
-│   ├── probabilities                           # Probability files from USACE (update as needed) 
+│   ├── probabilities                           # Probability files from USACE (update as needed)
+│   ├── snodas                                  # SNODAS file from USACE (update as needed)
 ├── docs                                        # Documents
 ├── forecast                                    # Folder to save the forecast output
-│   └── figures                                 # Forecast figures
 ├── LICENSE                                     # Project license
 ├── notebooks                                   # Jupyter notebooks
 │   ├── exploratory                             # Initial exploration and additionally helpful notebooks
 │   ├── production                              # Production-ready notebooks (use these to produce forecasts)
-│   └── verification                            # Notebooks used for verification and validation
+│   └── validation                              # Notebooks used for verification and validation
 ├── README.md                                   # Project README file
 ├── requirements                                # Conda environment requirements
 ├── ROADMAP.md                                  # Release schedule and CI/CD implementation plan
