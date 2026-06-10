@@ -779,15 +779,12 @@ class CFSTransformer:
             - pd.DateOffset(months=months_back)
         )
 
-        # Convert cfs_run to datetime if needed
-        if not pd.api.types.is_datetime64_any_dtype(df["cfs_run"]):
-            df["cfs_run"] = pd.to_datetime(
-                df["cfs_run"].astype(str),
-                format="%Y%m%d%H"
-            )
+        cfs_run_dt = pd.to_datetime(
+            df["cfs_run"].astype(str),
+            format="%Y%m%d%H"
+        )
 
-        # Filter
-        df_filtered = df[df["cfs_run"] >= start_date].copy()
+        df_filtered = df.loc[cfs_run_dt >= start_date].copy()
 
         print(f"Beginning from month {pd.Timestamp(forecast_month).strftime('%m-%Y')}")
 
@@ -1061,6 +1058,29 @@ class CNBSForecaster:
         # Set suffixes
         suffix = "_anom" if mode == "anomaly" else ""
 
+        # Define paths
+        x_scaler_path = os.path.join(
+            scaler_dir, f"x_scaler{suffix}.joblib"
+        )
+        y_scaler_path = os.path.join(
+            scaler_dir, f"y_scaler{suffix}.joblib"
+        )
+
+        # Verify scalers exist
+        missing = []
+
+        if not os.path.exists(x_scaler_path):
+            missing.append(x_scaler_path)
+
+        if not os.path.exists(y_scaler_path):
+            missing.append(y_scaler_path)
+
+        if missing:
+            raise FileNotFoundError(
+                "Required scaler file(s) not found:\n"
+                + "\n".join(missing)
+            )
+
         # Load scalers
         self.x_scaler = joblib.load(
             os.path.join(scaler_dir, f"x_scaler{suffix}.joblib")
@@ -1071,6 +1091,11 @@ class CNBSForecaster:
 
         # Load models
         self.models = self._load_models(suffix)
+
+        if not self.models:
+            raise FileNotFoundError(
+                f"No saved models found in {self.model_dir}"
+            )
 
     def _load_models(self, suffix):
         models = {}

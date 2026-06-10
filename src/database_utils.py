@@ -2,6 +2,8 @@ import sqlite3
 import os
 import pandas as pd
 import sys
+import time
+import sqlite3
 from datetime import datetime, timedelta, timezone
 from dateutil.relativedelta import relativedelta
 
@@ -16,74 +18,29 @@ class CFSDatabase:
 
     def _initialize_database(self):
         """
-        Check if the database and table exist; create them if not.
+        Ensure database file exists.
         """
         conn = sqlite3.connect(self.database)
-        cursor = conn.cursor()
-
-        # Check if table exists
-        cursor.execute("""
-            SELECT name FROM sqlite_master 
-            WHERE type='table' AND name=?
-        """, (self.table,))
-        exists = cursor.fetchone()
-
-        if not exists:
-            print(f"Creating new database: {self.database}")
-            # Define a simple schema — adjust to your actual needs
-            cursor.execute(f'''
-                CREATE TABLE IF NOT EXISTS {self.table} (
-                cfs_run INTEGER,
-                year INTEGER,
-                month INTEGER,
-                lake TEXT,
-                surface_type TEXT,
-                component TEXT,
-                value REAL,
-                PRIMARY KEY (cfs_run, year, month, lake, surface_type, component)
-            )
-            ''')
-            conn.commit()
-
         conn.close()
 
-    def open(self):
-        if not os.path.exists(self.database):
-            print(f"Creating new database: {self.database}")
+    def create_cfs_table(self):
+        """
+        Create the standard CFS table schema if it does not exist.
+        """
+        with sqlite3.connect(self.database) as conn:
+            conn.execute(f'''
+                CREATE TABLE IF NOT EXISTS {self.table} (
+                    cfs_run TEXT,
+                    year INTEGER,
+                    month INTEGER,
+                    lake TEXT,
+                    surface_type TEXT,
+                    component TEXT,
+                    value REAL,
+                    PRIMARY KEY (cfs_run, year, month, lake, surface_type, component)
+                )
+            ''')
 
-        conn = sqlite3.connect(self.database)
-        cursor = conn.cursor()
-
-        # Create the table if it doesn't exist
-        cursor.execute(f'''
-        CREATE TABLE IF NOT EXISTS {self.table} (
-            cfs_run INTEGER,
-            year INTEGER,
-            month INTEGER,
-            lake TEXT,
-            surface_type TEXT,
-            component TEXT,
-            value REAL,
-            PRIMARY KEY (cfs_run, year, month, lake, surface_type, component)
-        )
-        ''')
-        conn.commit()
-
-        # --- Detect which "value" column exists ---
-        cursor.execute(f"PRAGMA table_info({self.table})")
-        columns = [row[1] for row in cursor.fetchall()]
-
-        if "value [mm]" in columns:
-            self.value_column = "value [mm]"
-        elif "value" in columns:
-            self.value_column = "value"
-        else:
-            raise RuntimeError(
-                f"Neither 'value' nor 'value [mm]' column found in table '{self.table}'."
-            )
-
-        print(f"Connected to {self.table}.")
-    
     def load(self):
         # Create a connection to the SQLite database
         conn = sqlite3.connect(self.database)
@@ -157,8 +114,8 @@ class CFSDatabase:
             sqlite3.DatabaseError: For database interaction errors.
         """
 
-        import time
-        import sqlite3
+        # Ensure the table exists before attempting to add data
+        self.create_cfs_table()
 
         # --- Input validation ---
         if not isinstance(year, int):
