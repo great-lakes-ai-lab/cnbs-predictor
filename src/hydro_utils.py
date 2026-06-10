@@ -141,9 +141,10 @@ def convert_mm_to_cms(df):
         'erie': 25655 * 1000000,           # Lake Erie area in square meters
         'ontario': 19009 * 1000000         # Lake Ontario area in square meters
     }
-    
+    df_units = df.copy()  # Create a copy of the input DataFrame to avoid modifying the original
+
     # Apply the conversion formula for each row in the dataframe
-    df['value [cms]'] = df.apply(
+    df_units['value [cms]'] = df_units.apply(
         lambda row: (
             # Convert mm to meters, multiply by the lake surface area, and divide by seconds in the given month
             (row['value [mm]'] / 1000) * lake_sa.get(row['lake'], 0) / 
@@ -152,7 +153,7 @@ def convert_mm_to_cms(df):
     )
     
     # Return the modified DataFrame with the new 'value [cms]' column
-    return df
+    return df_units
 
 def load_model(model_name: str, models_info: list):
     """

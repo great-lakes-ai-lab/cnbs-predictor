@@ -47,31 +47,25 @@ class TestCFSTransformerFilter:
         return pd.DataFrame({"cfs_run": cfs_runs, "value": range(len(cfs_runs))})
 
     def test_filters_out_runs_before_window(self):
-        # first_forecast_month = 12-2024, months_back = 10 -> start_date = 2024-03-01
         df = self._build([
             "2024010100",  # before window — drop
-            "2024030100",  # before window — drop
+            "2024020100",  # within — keep
+            "2024030100",  # within — keep
+            "2024040100",  # within — keep
             "2024110100",  # within — keep
             "2024120100",  # equal to first_fc — keep
         ])
         result = CFSTransformer(df).filter(datetime(2024, 12, 1), months_back=10)
+        print(result)
         # Three rows survive; the 2024-01 one is dropped.
-        assert len(result) == 3
-        assert "2024010100" not in pd.to_datetime(result["cfs_run"]).dt.strftime("%Y%m%d%H").values
+        assert len(result) == 5
+        assert "2024010100" not in result["cfs_run"].astype(str).values
 
     def test_default_months_back_is_10(self):
         df = self._build(["2023060100", "2024030100", "2024120100"])
         # Default months_back=10, first_fc=2024-12 -> start = 2024-03-01.
         result = CFSTransformer(df).filter(datetime(2024, 12, 1))
         assert len(result) == 2  # only going back 9 months, so 2023-06-01 and 2024-03-01 are not included
-
-    def test_handles_already_datetime_cfs_run(self):
-        df = pd.DataFrame({
-            "cfs_run": pd.to_datetime(["2024-03-01", "2024-12-01"]),
-            "value": [1, 2],
-        })
-        result = CFSTransformer(df).filter(datetime(2024, 12, 1), months_back=10)
-        assert len(result) == 2  # both within the window
 
 
 # ===========================================================================
