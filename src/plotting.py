@@ -6,8 +6,14 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 import plotly.graph_objects as go
+import matplotlib.colors as colors
+import cartopy.crs as ccrs
+import cartopy.feature as cfeature
+import cartopy.io.shapereader as shpreader
+import matplotlib.patches as mpatches
 from plotly.subplots import make_subplots
 import warnings
+
 warnings.filterwarnings("ignore", message="This axis already has a converter set")
 
 def plot_cnbs_forecast(df, filename=None):
@@ -381,116 +387,336 @@ def plot_nbs_forecast(df_filtered, prob, filename=None):
     # Show plot
     plt.show()
 
-def plot_prob_exceed(df_filtered, prob, filename=None):
+import os
+import matplotlib.pyplot as plt
+import matplotlib.dates as mdates
+import pandas as pd
+
+
+def plot_cep_timeseries(df_cep, filename=None):
     """
-    Plot Great Lakes 12-Month NBS probability of exceedance for multiple models.
+    Plot Great Lakes 12-Month mean CEP timeseries for multiple models.
 
     Parameters
     ----------
-    df_filtered : pd.DataFrame
-        Forecast data containing 'forecast_month', 'lake', 'model', and 'nbs'.
-    prob : pd.DataFrame
-        Probability of exceedance data with 'month', 'lake', 'prob_exceedance', and 'value'.
+    df_cep : pd.DataFrame
+        CEP dataframe. Must contain:
+            - date
+            - lake
+            - model
+            - cep
+
     filename : str, optional
-        Path to save the figure. If None, the plot is displayed only.
+        Path to save figure.
     """
 
-    # --- Copy and prepare dataframe ---
-    df = df_filtered.copy()
-    df["date"] = pd.to_datetime(df["forecast_month"], format="%Y-%m")
+    df = df_cep.copy()
 
-    # --- Lakes ---
+    df["date"] = pd.to_datetime(df["date"])
+    df["lake"] = df["lake"].str.lower().str.strip()
+
+    # NEW: Take mean CEP for each model/lake/month
+    df = (
+        df.groupby(["date", "lake", "model"], as_index=False)["cep"]
+        .mean()
+    )
+
     lakes = ["superior", "michigan-huron", "erie", "ontario"]
 
-    # --- Colors for models ---
-    models_info = df["model"].unique().tolist()
-    custom_colors = ['blue', 'green', 'red', 'purple', 'orange',
-                     'brown', 'pink', 'olive', 'cyan', 'magenta']
+    lake_labels = {
+        "superior": "Superior",
+        "michigan-huron": "Mich-Huron",
+        "erie": "Erie",
+        "ontario": "Ontario",
+    }
+
+    models_info = sorted(df["model"].unique().tolist())
+
+    custom_colors = [
+        "blue", "green", "red", "purple",
+        "orange", "brown", "pink", "olive",
+        "cyan", "magenta"
+    ]
+
     if len(models_info) > len(custom_colors):
         raise ValueError(
-            f"Number of models ({len(models_info)}) exceeds available colors "
-            f"({len(custom_colors)}). Add more colors."
+            f"Number of models ({len(models_info)}) exceeds "
+            f"available colors ({len(custom_colors)})."
         )
-    model_colors = {model: custom_colors[i] for i, model in enumerate(models_info)}
 
-    # --- Helper: find PoE for given value ---
-    def get_poe_from_df(value, month, lake, poe_df):
-        """Interpolate the probability of exceedance for a given lake/month/value."""
-        subset = poe_df[(poe_df["lake"] == lake) & (poe_df["month"] == month)]
-        if subset.empty:
-            return np.nan
-        x = subset["value"].values
-        y = subset["prob_exceedance"].values
+    model_colors = {
+        model: custom_colors[i]
+        for i, model in enumerate(models_info)
+    }
 
-        # Sort to ensure monotonic interpolation
-        sort_idx = np.argsort(x)
-        x, y = x[sort_idx], y[sort_idx]
+    fig, axs = plt.subplots(
+        len(lakes),
+        1,
+        figsize=(10, 12),
+        squeeze=False
+    )
 
-        # Boundaries
-        if value <= x.min():
-            return y.max()
-        if value >= x.max():
-            return y.min()
-        return np.interp(value, x, y[::-1] if x[0] > x[-1] else y)
+    fig.suptitle(
+        "Great Lakes 12-Month Mean Climatology Exceedance Probability (NBS)",
+        fontsize=16,
+        x=0.17,
+        ha="left"
+    )
 
-    # --- Month map ---
-    MONTH_MAP = {1: "Jan", 2: "Feb", 3: "Mar", 4: "Apr",
-                 5: "May", 6: "Jun", 7: "Jul", 8: "Aug",
-                 9: "Sep", 10: "Oct", 11: "Nov", 12: "Dec"}
-
-    # --- Initialize figure ---
-    fig, axs = plt.subplots(len(lakes), 1, figsize=(10, 12), squeeze=False)
-    fig.suptitle("Great Lakes 12-Month Probability of Exceedance (NBS)", fontsize=16, x=0.17, ha='left')
-
-    # --- Loop over lakes ---
     for row, lake in enumerate(lakes):
         ax = axs[row, 0]
-        lake_df = df[df["lake"] == lake]
 
-        # Plot each model
+        lake_df = df[df["lake"] == lake].copy()
+
         for model_name in models_info:
-            model_mean = lake_df[lake_df["model"] == model_name]
-            mean_df = model_mean.groupby("forecast_month").mean(numeric_only=True).reset_index()
-            mean_df["date"] = pd.to_datetime(mean_df["forecast_month"], format="%Y-%m")
+            model_df = (
+                lake_df[lake_df["model"] == model_name]
+                .sort_values("date")
+            )
 
-            poes = []
-            for _, row_data in mean_df.iterrows():
-                month_num = row_data["date"].month
-                month_name = MONTH_MAP[month_num]
-                poe = get_poe_from_df(row_data["nbs"], month_name, lake, prob)
-                poes.append(poe)
-            mean_df["PoE"] = poes
+            if model_df.empty:
+                continue
 
-            ax.plot(mean_df["date"], mean_df["PoE"], marker='o', markersize=3,
-                    color=model_colors[model_name], label=model_name)
+            ax.plot(
+                model_df["date"],
+                model_df["cep"],
+                marker="o",
+                markersize=4,
+                linewidth=2,
+                color=model_colors[model_name],
+                label=model_name
+            )
 
-        # Formatting
-        ax.axhline(0.5, color='black', linestyle='--', linewidth=1, alpha=0.7)
-        ax.grid(True, linestyle='--', alpha=0.6)
+        ax.axhline(
+            0.5,
+            color="black",
+            linestyle="--",
+            linewidth=1,
+            alpha=0.7
+        )
+
+        ax.grid(True, linestyle="--", alpha=0.6)
         ax.set_ylim(0, 1)
         ax.set_xlim(df["date"].min(), df["date"].max())
-        ax.set_ylabel(["Superior", "Mich-Huron", "Erie", "Ontario"][row], fontsize=14)
+        ax.set_ylabel(lake_labels[lake], fontsize=14)
 
-        # Format x-axis
         if row == len(lakes) - 1:
-            ax.xaxis.set_major_formatter(mdates.DateFormatter('%m-%Y'))
-            ax.tick_params(axis='x', rotation=45)
+            ax.xaxis.set_major_formatter(mdates.DateFormatter("%m-%Y"))
+            ax.tick_params(axis="x", rotation=45)
+
             for label in ax.get_xticklabels():
-                label.set_horizontalalignment('right')
+                label.set_horizontalalignment("right")
         else:
             ax.set_xticklabels([])
 
-    # --- Legend only on top plot ---
-    axs[0, 0].legend(loc='lower left', bbox_to_anchor=(1, 0.525), fontsize=12)
+    axs[0, 0].legend(
+        loc="lower left",
+        bbox_to_anchor=(1, 0.525),
+        fontsize=12
+    )
 
     plt.tight_layout()
 
-    # Save the figure if filename is provided
     if filename:
-        os.makedirs(os.path.dirname(filename), exist_ok=True)
-        plt.savefig(filename, bbox_inches='tight')
+        folder = os.path.dirname(filename)
+        if folder:
+            os.makedirs(folder, exist_ok=True)
 
-    # Show the plot
+        plt.savefig(filename, bbox_inches="tight", dpi=300)
+
     plt.show()
 
+def plot_cep_spatial(
+    df_cep,
+    model=None,
+    value_col="cep",
+    filename=None,
+    cmap="BrBG_r",
+    title="Great Lakes 12-Month NBS Climatology Exceedance Outlook"
+):
+    df = df_cep.copy()
+    df["date"] = pd.to_datetime(df["forecast_month"])
+    df["lake"] = df["lake"].str.lower().str.strip()
 
+    if model is not None:
+        df = df[df["model"] == model].copy()
+        plot_title = f"{title} - {model}"
+    else:
+        df = (
+            df
+            .groupby(["lake", "forecast_month", "date"], as_index=False)
+            .mean(numeric_only=True)
+        )
+        plot_title = f"{title} - Multi-model Mean"
+
+    # Natural Earth lake polygon file
+    lake_shp = shpreader.natural_earth(
+        resolution="10m",
+        category="physical",
+        name="lakes"
+    )
+
+    lake_records = list(shpreader.Reader(lake_shp).records())
+
+    # Match Natural Earth names to your lake names
+    lake_name_map = {
+        "Lake Superior": "superior",
+        "Lake Michigan": "michigan-huron",
+        "Lake Huron": "michigan-huron",
+        "Lake Erie": "erie",
+        "Lake Ontario": "ontario",
+    }
+
+    great_lake_records = []
+    for rec in lake_records:
+        name = rec.attributes.get("name")
+        if name in lake_name_map:
+            great_lake_records.append((lake_name_map[name], rec.geometry))
+
+    months = (
+        df[["forecast_month", "date"]]
+        .drop_duplicates()
+        .sort_values("date")
+        .head(12)
+    )
+
+    norm = colors.TwoSlopeNorm(vmin=0, vcenter=0.5, vmax=1)
+    cbar_label = "Wetter     ←     Normal     →     Drier"
+
+    cmap_obj = plt.get_cmap(cmap)
+
+    # 4 rows x 3 columns = 3 across, 4 down
+    fig, axes = plt.subplots(
+        4,
+        3,
+        figsize=(11, 11),
+        subplot_kw={"projection": ccrs.PlateCarree()},
+        constrained_layout=True
+    )
+
+    axes = axes.flatten()
+
+    for i, (_, month_row) in enumerate(months.iterrows()):
+        ax = axes[i]
+
+        forecast_month = month_row["forecast_month"]
+        date = month_row["date"]
+        month_df = df[df["forecast_month"] == forecast_month]
+
+        ax.set_extent([-93, -74, 41, 50], crs=ccrs.PlateCarree())
+
+        ax.add_feature(cfeature.LAND, facecolor="lightgray", alpha=0.35)
+        ax.add_feature(cfeature.BORDERS, linewidth=0.5)
+        ax.add_feature(cfeature.COASTLINE, linewidth=0.4)
+
+        states = cfeature.NaturalEarthFeature(
+            category="cultural",
+            name="admin_1_states_provinces_lines",
+            scale="50m",
+            facecolor="none"
+        )
+        ax.add_feature(states, edgecolor="gray", linewidth=0.4)
+
+        for lake, geom in great_lake_records:
+            row = month_df[month_df["lake"] == lake]
+
+            if row.empty:
+                facecolor = "lightgray"
+                label = "NA"
+            else:
+                value = row[value_col].iloc[0]
+                cep = row["cep"].iloc[0]
+
+                if pd.isna(value):
+                    facecolor = "lightgray"
+                    label = "NA"
+                else:
+                    facecolor = cmap_obj(norm(value))
+                    label = f"{cep:.2f}"
+
+            ax.add_geometries(
+                [geom],
+                crs=ccrs.PlateCarree(),
+                facecolor=facecolor,
+                edgecolor="black",
+                linewidth=0.8,
+                zorder=4
+            )
+
+            # Label each lake with CEP value
+            #point = geom.representative_point()
+            #ax.text(
+            #    point.x,
+            #    point.y,
+            #    label,
+            #    ha="center",
+            #    va="center",
+            #    fontsize=8,
+            #    fontweight="bold",
+            #    transform=ccrs.PlateCarree(),
+            #    zorder=5
+            #)
+
+        ax.set_aspect(1.25)
+        ax.set_axis_off()
+
+        ax.text(
+            0.97,
+            0.96,
+            date.strftime("%b %Y"),
+            transform=ax.transAxes,
+            ha="right",
+            va="top",
+            fontsize=13,
+            color="black",
+            zorder=2000
+)
+
+        # Draw black box around each subplot
+        rect = mpatches.Rectangle(
+            (0, 0),
+            1,
+            1,
+            transform=ax.transAxes,
+            fill=False,
+            edgecolor="black",
+            linewidth=1.2,
+            zorder=1000,
+            clip_on=False
+        )
+
+        ax.add_patch(rect)
+
+    for j in range(len(months), 12):
+        axes[j].set_axis_off()
+
+    sm = plt.cm.ScalarMappable(cmap=cmap_obj, norm=norm)
+    sm._A = []
+
+    cbar = fig.colorbar(
+        sm,
+        ax=axes,
+        orientation="horizontal",
+        fraction=0.035,
+        pad=0.04
+    )
+
+    cbar.set_label(cbar_label)
+
+    ticks = [0, 0.25, 0.5, 0.75, 1]
+
+    # Bottom labels
+    cbar.set_ticks(ticks)
+    cbar.set_ticklabels(["0", "0.25", "0.5", "0.75", "1"])
+
+    fig.suptitle(plot_title, fontsize=16, fontweight="bold")
+
+    if filename:
+        folder = os.path.dirname(filename)
+        if folder:
+            os.makedirs(folder, exist_ok=True)
+        plt.savefig(filename, dpi=300, bbox_inches="tight")
+
+    plt.show()
+
+    return fig

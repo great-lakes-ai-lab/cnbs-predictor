@@ -1,5 +1,5 @@
 {
-  "id": "cf3cada7-c688-4df0-9def-db459b9059bd",
+  "id": "c430f7e8-3e61-4ab4-b87e-7a36f3b59e45",
   "var_list": [
     "superior_lake_precipitation",
     "michigan-huron_lake_precipitation",
@@ -30,6 +30,6 @@
     "train_start": "1979-01-01",
     "train_end": "2017-12-31"
   },
-  "calculation_date": "2026-06-04 09:40:54.976293",
+  "calculation_date": "2026-06-18 14:13:02.716563",
   "reduction": "monthly_mean"
 }

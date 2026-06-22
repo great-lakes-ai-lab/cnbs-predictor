@@ -25,129 +25,321 @@ class CFSProcessor:
         self.database = database
         self.table = table
         self.db = CFSDatabase(database, table)
-
+    
     def process_files(self, download_dir, mask_file, mask_variables):
         """
-        Process GRIB files for a CFS run and insert extracted data into the database.
+        Process CFS GRIB files and insert lake-averaged variables into the database.
+
+        This function loops through downloaded CFS GRIB files for a forecast run,
+        extracts relevant variables, remaps them to the mask grid, calculates
+        lake- or land-area weighted averages, and stores the results in the
+        forecast database.
+
+        Processed variables include:
+            - precipitation from pgbf files
+            - 2-meter air temperature from flxf files
+            - evaporation from latent heat flux in flxf files
+
+        Parameters
+        ----------
+        download_dir : str
+            Directory containing downloaded CFS GRIB files.
+
+        mask_file : str
+            Path to the NetCDF mask file. The mask file must include:
+                - latitude
+                - longitude
+                - lake/land mask variables listed in `mask_variables`
+
+        mask_variables : list of str
+            List of mask variable names to process.
+
+            Expected format:
+                "{lake_abbreviation}_{surface_type}"
+
+            Examples:
+                - "sup_lake"
+                - "sup_land"
+                - "mih_lake"
+                - "eri_land"
+
+            Valid lake abbreviations are:
+                - "sup" -> "superior"
+                - "mih" -> "michigan-huron"
+                - "eri" -> "erie"
+                - "ont" -> "ontario"
+
+        Returns
+        -------
+        None
+            Results are inserted directly into the database using `self.db.add()`.
         """
+
+        # -------------------------
         # Validate inputs
+        # -------------------------
         if not os.path.isdir(download_dir):
-            raise ValueError(f"ERROR: The specified directory does not exist.")
+            raise ValueError("ERROR: The specified directory does not exist.")
+
         if not os.path.exists(mask_file):
             raise ValueError("ERROR: mask_file not found.")
+
         if not isinstance(mask_variables, list):
             raise ValueError("ERROR: mask_variables must be a list of strings.")
 
-        # Load mask and calculate grid area
+        # -------------------------
+        # Load mask grid and areas
+        # -------------------------
+        # The mask grid defines the target latitude/longitude grid and lake/land masks.
         mask_ds = nc.Dataset(mask_file)
-        mask_lat = mask_ds.variables['latitude'][:]
-        mask_lon = mask_ds.variables['longitude'][:]
+
+        mask_lat = mask_ds.variables["latitude"][:]
+        mask_lon = mask_ds.variables["longitude"][:]
+
+        # Calculate grid-cell area for area-weighted lake/land averages.
         area = calculate_grid_cell_areas(mask_lon, mask_lat)
-                          
-        # Remove .idx files
+
+        # Mapping from mask file lake abbreviations to full lake names.
+        lake_lookup = {
+            "eri": "erie",
+            "ont": "ontario",
+            "sup": "superior",
+            "mih": "michigan-huron",
+        }
+
+        # -------------------------
+        # Remove index files
+        # -------------------------
+        # cfgrib may create or use .idx files. Remove them so stale index files
+        # do not interfere with reading newly downloaded GRIB files.
         for f in os.listdir(download_dir):
-            if f.endswith('.idx'):
+            if f.endswith(".idx"):
                 os.remove(os.path.join(download_dir, f))
 
+        # -------------------------
+        # Process each GRIB file
+        # -------------------------
         for filename in sorted(os.listdir(download_dir)):
             file = os.path.join(download_dir, filename)
-            parts = filename.split('.')
+
+            # File names are expected to contain the CFS run and forecast month.
+            # Example structure depends on your downloaded CFS naming convention.
+            parts = filename.split(".")
+
             cfs_run = parts[2]
 
             forecast_year = int(parts[3][:4])
             forecast_month = int(parts[3][4:6])
+
+            # Number of days in the forecast month, used to convert monthly totals.
             _, num_days = calendar.monthrange(forecast_year, forecast_month)
 
-            # ===== Precipitation ===== #
-            if filename.startswith('pgbf') and filename.endswith('.grib.grb2'):
+            # =====================================================
+            # Precipitation
+            # =====================================================
+            # pgbf files contain precipitation fields.
+            if filename.startswith("pgbf") and filename.endswith(".grib.grb2"):
                 try:
-                    pgb_surface = cfgrib.open_dataset(file, engine='cfgrib', filter_by_keys={'typeOfLevel': 'surface'}, decode_timedelta=False)
-                    pcp = pgb_surface['tp']
+                    # Open surface-level fields from the pgbf file.
+                    pgb_surface = cfgrib.open_dataset(
+                        file,
+                        engine="cfgrib",
+                        filter_by_keys={"typeOfLevel": "surface"},
+                        decode_timedelta=False,
+                    )
+
+                    pcp = pgb_surface["tp"]
+
+                    # Cut the precipitation field to the mask extent.
                     pcp_cut = pcp.sel(
                         latitude=slice(mask_lat.max(), mask_lat.min()),
-                        longitude=slice(mask_lon.min(), mask_lon.max())
+                        longitude=slice(mask_lon.min(), mask_lon.max()),
                     )
-                    pcp_remap = pcp_cut.interp(latitude=mask_lat, longitude=mask_lon, method='linear')
+
+                    # Remap precipitation to the mask grid.
+                    pcp_remap = pcp_cut.interp(
+                        latitude=mask_lat,
+                        longitude=mask_lon,
+                        method="linear",
+                    )
 
                     for mask_var in mask_variables:
                         mask = mask_ds.variables[mask_var][:]
-                        total_pcp = (np.sum(pcp_remap * mask * area)) * 4 * num_days
+
+                        # Calculate area-weighted mean precipitation.
+                        # The factor of 4 and number of days convert the CFS value
+                        # to an estimated monthly total.
+                        total_pcp = np.sum(pcp_remap * mask * area) * 4 * num_days
                         pcp_mm = total_pcp / np.sum(mask * area)
 
-                        lake_abv, surface_type = mask_var.split('_')
-                        lake = {'eri': 'erie', 'ont': 'ontario', 'sup': 'superior', 'mih': 'michigan-huron'}.get(lake_abv)
-                        if lake is None:
-                            raise ValueError(f"ERROR: The mask variables need to begin with 'eri', 'ont', 'sup', or 'mih'. Check the mask file.")
+                        lake_abv, surface_type = mask_var.split("_")
+                        lake = lake_lookup.get(lake_abv)
 
-                        self.db.add(cfs_run, forecast_year, forecast_month, lake, surface_type, 'precipitation', pcp_mm.item())
+                        if lake is None:
+                            raise ValueError(
+                                "ERROR: The mask variables need to begin with "
+                                "'eri', 'ont', 'sup', or 'mih'. Check the mask file."
+                            )
+
+                        # Insert precipitation into the database.
+                        self.db.add(
+                            cfs_run,
+                            forecast_year,
+                            forecast_month,
+                            lake,
+                            surface_type,
+                            "precipitation",
+                            pcp_mm.item(),
+                        )
 
                 except Exception as e:
                     print(f"ERROR processing precipitation data: {e}. Skipping forecast.")
                     continue
 
-            # ===== 2m Temperature ===== #
-            elif filename.startswith('flxf') and filename.endswith('.grib.grb2'):
+            # =====================================================
+            # 2-meter air temperature and evaporation
+            # =====================================================
+            # flxf files contain temperature and latent heat flux fields.
+            elif filename.startswith("flxf") and filename.endswith(".grib.grb2"):
+
+                # -------------------------
+                # 2-meter air temperature
+                # -------------------------
                 try:
-                    flx_2mabove = cfgrib.open_dataset(file, engine='cfgrib', filter_by_keys={'typeOfLevel': 'heightAboveGround', 'level': 2}, decode_timedelta=False)
+                    # Open 2-meter height-above-ground fields.
+                    flx_2mabove = cfgrib.open_dataset(
+                        file,
+                        engine="cfgrib",
+                        filter_by_keys={
+                            "typeOfLevel": "heightAboveGround",
+                            "level": 2,
+                        },
+                        decode_timedelta=False,
+                    )
+
+                    # Variable name differs between CFS data versions.
                     try:
-                        mean2t = flx_2mabove['avg_2t']
+                        mean2t = flx_2mabove["avg_2t"]
                     except KeyError:
                         print("'avg_2t' not found in flux file, trying 'mean2t'.")
-                        mean2t = flx_2mabove['mean2t']
+                        mean2t = flx_2mabove["mean2t"]
 
+                    # Cut the temperature field to the mask extent.
                     mean2t_cut = mean2t.sel(
                         latitude=slice(mask_lat.max(), mask_lat.min()),
-                        longitude=slice(mask_lon.min(), mask_lon.max())
+                        longitude=slice(mask_lon.min(), mask_lon.max()),
                     )
-                    mean2t_remap = mean2t_cut.interp(latitude=mask_lat, longitude=mask_lon, method='linear')
+
+                    # Remap temperature to the mask grid.
+                    mean2t_remap = mean2t_cut.interp(
+                        latitude=mask_lat,
+                        longitude=mask_lon,
+                        method="linear",
+                    )
 
                     for mask_var in mask_variables:
-                        mask = np.ma.masked_where(np.isnan(mask_ds.variables[mask_var][:]), np.ones_like(mask_ds.variables[mask_var][:]))
+                        # Create a mask where valid mask cells are retained.
+                        mask = np.ma.masked_where(
+                            np.isnan(mask_ds.variables[mask_var][:]),
+                            np.ones_like(mask_ds.variables[mask_var][:]),
+                        )
+
+                        # Calculate mean 2-meter air temperature over the mask area.
                         tmp_avg = np.mean(mean2t_remap * mask)
 
-                        lake_abv, surface_type = mask_var.split('_')
-                        lake = {'eri': 'erie', 'ont': 'ontario', 'sup': 'superior', 'mih': 'michigan-huron'}.get(lake_abv)
-                        if lake is None:
-                            raise ValueError(f"ERROR: The mask variables need to begin with 'eri', 'ont', 'sup', or 'mih'. Check the mask file.")
+                        lake_abv, surface_type = mask_var.split("_")
+                        lake = lake_lookup.get(lake_abv)
 
-                        self.db.add(cfs_run, forecast_year, forecast_month, lake, surface_type, 'air_temperature', tmp_avg.item())
+                        if lake is None:
+                            raise ValueError(
+                                "ERROR: The mask variables need to begin with "
+                                "'eri', 'ont', 'sup', or 'mih'. Check the mask file."
+                            )
+
+                        # Insert air temperature into the database.
+                        self.db.add(
+                            cfs_run,
+                            forecast_year,
+                            forecast_month,
+                            lake,
+                            surface_type,
+                            "air_temperature",
+                            tmp_avg.item(),
+                        )
 
                 except Exception as e:
                     print(f"ERROR processing temperature data: {e}. Skipping forecast.")
                     continue
 
-                # ===== Evaporation ===== #
+                # -------------------------
+                # Evaporation
+                # -------------------------
                 try:
-                    flx_surface = cfgrib.open_dataset(file, engine='cfgrib', filter_by_keys={'typeOfLevel': 'surface'}, decode_timedelta=False)
+                    # Open surface-level flux fields.
+                    flx_surface = cfgrib.open_dataset(
+                        file,
+                        engine="cfgrib",
+                        filter_by_keys={"typeOfLevel": "surface"},
+                        decode_timedelta=False,
+                    )
+
+                    # Variable name differs between CFS data versions.
                     try:
-                        mslhf = flx_surface['avg_slhtf']
+                        mslhf = flx_surface["avg_slhtf"]
                     except KeyError:
                         print("'avg_slhtf' not found in flux file, trying 'mslhf'.")
-                        mslhf = flx_surface['mslhf']
+                        mslhf = flx_surface["mslhf"]
 
+                    # Cut latent heat flux to the mask extent.
                     mslhf_cut = mslhf.sel(
                         latitude=slice(mask_lat.max(), mask_lat.min()),
-                        longitude=slice(mask_lon.min(), mask_lon.max())
+                        longitude=slice(mask_lon.min(), mask_lon.max()),
                     )
-                    mslhf_remap = mslhf_cut.interp(latitude=mask_lat, longitude=mask_lon, method='linear')
 
+                    # Remap latent heat flux to the mask grid.
+                    mslhf_remap = mslhf_cut.interp(
+                        latitude=mask_lat,
+                        longitude=mask_lon,
+                        method="linear",
+                    )
+
+                    # Convert latent heat flux to evaporation rate.
                     evap = calculate_evaporation_rate(mean2t_remap, mslhf_remap)
 
                     for mask_var in mask_variables:
                         mask = mask_ds.variables[mask_var][:]
-                        total_evap = (np.sum(evap * area * mask)) * num_days * 86400
+
+                        # Calculate area-weighted monthly evaporation.
+                        total_evap = np.sum(evap * area * mask) * num_days * 86400
                         evap_mm = total_evap / np.sum(mask * area)
 
-                        lake_abv, surface_type = mask_var.split('_')
-                        lake = {'eri': 'erie', 'ont': 'ontario', 'sup': 'superior', 'mih': 'michigan-huron'}.get(lake_abv)
-                        if lake is None:
-                            raise ValueError(f"ERROR: The mask variables need to begin with 'eri', 'ont', 'sup', or 'mih'. Check the mask file.")
+                        lake_abv, surface_type = mask_var.split("_")
+                        lake = lake_lookup.get(lake_abv)
 
-                        self.db.add(cfs_run, forecast_year, forecast_month, lake, surface_type, 'evaporation', evap_mm.item())
+                        if lake is None:
+                            raise ValueError(
+                                "ERROR: The mask variables need to begin with "
+                                "'eri', 'ont', 'sup', or 'mih'. Check the mask file."
+                            )
+
+                        # Insert evaporation into the database.
+                        self.db.add(
+                            cfs_run,
+                            forecast_year,
+                            forecast_month,
+                            lake,
+                            surface_type,
+                            "evaporation",
+                            evap_mm.item(),
+                        )
 
                 except Exception as e:
                     print(f"ERROR processing evaporation data: {e}. Skipping forecast.")
                     continue
+
+            # -------------------------
+            # Skip files that do not match expected CFS GRIB patterns
+            # -------------------------
             else:
                 print(f"Skipping unrecognized file: {filename}")
                 continue
@@ -1114,8 +1306,6 @@ class CNBSForecaster:
         ----------
         X : pd.DataFrame
         model_name : str
-        mode : str
-            "actual" or "anomaly"
         scp_y : object, optional
             Required if mode='anomaly' to convert anomalies back to absolute
 
@@ -1156,12 +1346,12 @@ class CNBSForecaster:
 
         # --- Add model column efficiently ---
         df_model = pd.DataFrame(
-            {"model": [model_name] * len(df_pred)},
+            {"model": model_name},
             index=df_pred.index
         )
 
         # Concatenate all at once to avoid fragmentation
-        df_final = pd.concat([df_pred, df_model], axis=1)
+        df_final = pd.concat([df_pred, df_model], axis=1).copy()
 
         return df_final
 
@@ -1309,112 +1499,260 @@ class ForecastTransformer:
         else:
             raise ValueError("Dataframe must contain either 'forecast_month' or ('year','month') columns.")
 
-@staticmethod
-def align_prob_with_start_date(merged_df, start_date):
+class CEPCalculator:
     """
-    Aligns the months in a lake probability DataFrame to a specified start date,
-    creating a continuous datetime index beginning at that month.
-
-    Parameters
-    ----------
-    merged_df : pd.DataFrame
-        DataFrame containing at least the columns:
-        - 'month' (str): three-letter month abbreviation ("Jan"–"Dec")
-        - optionally 'month_num' and 'year' (they will be rebuilt if missing)
-    start_date : str
-        Start date in "MM-YYYY" format (e.g., "11-2025").
-        The resulting index will begin at this month.
-
-    Returns
-    -------
-    pd.DataFrame
-        Copy of merged_df with an added 'date' column (and datetime index)
-        spanning one full 12-month cycle starting from `start_date`.
-        The DataFrame is sorted chronologically by this new index.
-
-    Example
-    -------
-    >>> prob_aligned = align_prob_with_start_date(prob, "11-2025")
-    >>> prob_aligned.query("lake == 'erie'").head()
-               month   lake  prob_exceedance     value
-    date
-    2025-11-01   Nov   erie              0.5   85.4
-    2025-12-01   Dec   erie              0.5  102.2
-    2026-01-01   Jan   erie              0.5  125.8
+    Calculate Climatology Exceedance Probabilities (CEP) from forecast data
+    and probability exceedance curves.
     """
-    df = merged_df.copy()
 
-    # Define month mapping
-    month_order = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]
-    month_to_num = {m: i + 1 for i, m in enumerate(month_order)}
+    def __init__(self, prob):
+        """
+        Parameters
+        ----------
+        prob : pd.DataFrame
+            Probability dataframe containing:
+                - month
+                - lake
+                - prob_exceedance
+                - value
 
-    # Add month number if missing
-    if "month_num" not in df.columns:
-        df["month_num"] = df["month"].map(month_to_num)
+            If already aligned, it may also contain:
+                - date
+        """
 
-    # Parse the start date (e.g., 11-2025 → month=11, year=2025)
-    start_month, start_year = map(int, start_date.split("-"))
+        self.prob = prob.copy()
+        self.prob["lake"] = self.prob["lake"].str.lower().str.strip()
 
-    # Compute year assignment for each month
-    # Months >= start_month → same year, months < start_month → next year
-    df["year"] = df["month_num"].apply(
-        lambda m: start_year if m >= start_month else start_year + 1
-    )
+        if "date" in self.prob.columns:
+            self.prob["date"] = pd.to_datetime(self.prob["date"])
 
-    # Build datetime column
-    df["date"] = pd.to_datetime(
-        dict(year=df["year"], month=df["month_num"], day=1)
-    )
+    def align_prob_with_start_date(self, start_date):
+        """
+        Align probability dataframe months to a forecast start date.
 
-    # Sort chronologically and set index
-    df = df.sort_values(["lake", "date"]).set_index("date")
+        Parameters
+        ----------
+        start_date : str or datetime-like
+            Forecast start date. Accepts:
+                - "06-2026"
+                - "2026-06"
+                - "2026-06-01"
 
-    # Drop helper columns
-    df = df.drop(columns=["month_num", "year"], errors="ignore").reset_index()
+        Returns
+        -------
+        pandas.DataFrame
+            Aligned probability dataframe with a date column.
+        """
+
+        prob_aligned = self.prob.copy()
+
+        month_order = [
+            "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+            "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
+        ]
+
+        month_to_num = {
+            month: i + 1
+            for i, month in enumerate(month_order)
+        }
+
+        prob_aligned["month_num"] = prob_aligned["month"].map(month_to_num)
+
+        if prob_aligned["month_num"].isna().any():
+            bad_months = prob_aligned.loc[
+                prob_aligned["month_num"].isna(), "month"
+            ].unique()
+
+            raise ValueError(
+                f"Some months could not be mapped to month numbers: {bad_months}"
+            )
+
+        if isinstance(start_date, str) and len(start_date) == 7 and start_date[2] == "-":
+            start_month, start_year = map(int, start_date.split("-"))
+        else:
+            start = pd.to_datetime(start_date)
+            start_month = start.month
+            start_year = start.year
+
+        prob_aligned["year"] = np.where(
+            prob_aligned["month_num"] >= start_month,
+            start_year,
+            start_year + 1
+        )
+
+        prob_aligned["date"] = pd.to_datetime(
+            {
+                "year": prob_aligned["year"],
+                "month": prob_aligned["month_num"],
+                "day": 1
+            }
+        )
+
+        prob_aligned = (
+            prob_aligned
+            .sort_values(["lake", "date", "prob_exceedance"])
+            .drop(columns=["month_num", "year"], errors="ignore")
+            .reset_index(drop=True)
+        )
+
+        self.prob = prob_aligned.copy()
+
+        return prob_aligned
+
+    def _lookup_cep(self, value, lake, month):
+        """
+        Find CEP for a single forecast value, lake, and month
+        using the nearest climatological value.
+        """
+
+        if pd.isna(value):
+            return np.nan
+
+        lake = str(lake).lower().strip()
+        month = str(month).strip()
+
+        subset = self.prob[
+            (self.prob["lake"] == lake) &
+            (self.prob["month"] == month)
+        ]
+
+        if subset.empty:
+            return np.nan
+
+        diff = (subset["value"] - float(value)).abs()
+        closest = subset.loc[diff == diff.min()]
+
+        if len(closest) > 1:
+            closest = closest.iloc[[len(closest) // 2]]
+
+        return closest["prob_exceedance"].iloc[0]
+
+    def calculate_cep(
+        self,
+        df,
+        date_col="forecast_month",
+        component="nbs",
+        output_file=None,
+        sep=","
+    ):
+        """
+        Create a reduced dataframe containing forecast values and
+        climatology exceedance probability (CEP).
+
+        Parameters
+        ----------
+        df : pandas.DataFrame
+            Input forecast dataframe containing:
+                - date_col
+                - model
+                - lake
+                - component
+
+        date_col : str, default='forecast_month'
+            Column used to determine forecast month.
+
+        component : str, default='nbs'
+            Forecast component to evaluate.
+
+        output_file : str or None, default=None
+            Optional path to save output file.
+
+        sep : str, default=','
+            Delimiter used if output_file is provided.
+
+        Returns
+        -------
+        pandas.DataFrame
+            Columns:
+                date, forecast_month, model, lake, component, cep
+        """
+
+        required_cols = {date_col, "model", "lake", component}
+        missing = required_cols - set(df.columns)
+
+        if missing:
+            raise ValueError(f"Forecast dataframe is missing columns: {missing}")
+
+        temp = df.copy()
+
+        temp["date"] = pd.to_datetime(temp[date_col])
+        temp["_month"] = temp["date"].dt.strftime("%b")
+        temp["_lake"] = temp["lake"].str.lower().str.strip()
+
+        temp["cep"] = temp.apply(
+            lambda row: self._lookup_cep(
+                value=row[component],
+                lake=row["_lake"],
+                month=row["_month"]
+            ),
+            axis=1
+        )
+
+        df_cep = temp[
+            ["date", date_col, "model", "lake", component, "cep"]
+        ].copy()
+
+        if output_file is not None:
+            df_cep.to_csv(output_file, sep=sep, index=False)
+
+        return df_cep
     
-    return df
-
 @staticmethod
-def create_accumulation_dataframe(
+def calculate_acc_variables(
     df,
     accumulation_periods=(3, 6),
     exclude_columns=None,
 ):
     """
-    Create a wide-format accumulation dataframe with one row per
-    cfs_run and model.
+    Calculate accumulated forecast values for each CFS run and model.
+
+    For each unique `cfs_run` and `model`, this function sorts the forecast
+    data by `forecast_month` and sums the first N forecast months for each
+    requested accumulation period.
+
+    For example:
+        accumulation_periods=(1, 3, 6)
+
+    will create:
+        variable_acc1 = month 1
+        variable_acc3 = months 1-3 summed
+        variable_acc6 = months 1-6 summed
 
     Parameters
     ----------
     df : pandas.DataFrame
-        Long-format forecast dataframe containing:
+        Forecast dataframe containing one row per forecast month. Must include:
             - cfs_run
             - model
             - forecast_month
 
-    accumulation_periods : tuple, default=(3, 6)
+        All non-excluded columns are treated as forecast value columns.
+
+    accumulation_periods : tuple of int, default=(3, 6)
         Number of forecast months to accumulate.
 
-    exclude_columns : list or None
-        Columns to exclude from accumulation calculations.
+    exclude_columns : list, set, tuple, or None, default=None
+        Additional columns to exclude from accumulation calculations.
 
     Returns
     -------
     pandas.DataFrame
-        Wide-format accumulation dataframe.
+        Dataframe with one row per `cfs_run` and `model`, containing only:
+            - cfs_run
+            - model
+            - accumulated forecast variables
     """
 
+    # Work on a copy to avoid modifying the original dataframe
     df = df.copy()
 
+    # Ensure forecast_month sorts chronologically
     df["forecast_month"] = pd.to_datetime(df["forecast_month"])
-    df["cfs_run"] = pd.to_datetime(df["cfs_run"])
 
-    # Sort by lead time
-    df = df.sort_values(
-        ["cfs_run", "model", "forecast_month"]
-    )
+    # Sort so that the first N rows in each group represent the first N forecast months
+    df = df.sort_values(["cfs_run", "model", "forecast_month"])
 
-    # Columns not to accumulate
+    # Columns that should not be included in accumulation calculations
     default_exclude = {
         "cfs_run",
         "forecast_month",
@@ -1422,161 +1760,47 @@ def create_accumulation_dataframe(
         "date",
     }
 
+    # Add any user-provided columns to the exclusion list
     if exclude_columns is not None:
         default_exclude.update(exclude_columns)
 
+    # All remaining columns are assumed to be forecast variables to accumulate
     value_columns = [
         c for c in df.columns
         if c not in default_exclude
     ]
 
     output_rows = []
+
+    # Calculate accumulations separately for each forecast run and model
     grouped = df.groupby(["cfs_run", "model"])
 
     for (cfs_run, model), group in grouped:
-
         row = {
             "cfs_run": cfs_run,
             "model": model,
         }
 
+        # Make sure forecast months are in chronological order within each group
         group = group.sort_values("forecast_month")
 
         for acc in accumulation_periods:
+            # Select the first `acc` forecast months
             subset = group.iloc[:acc]
-            for col in value_columns:
-                row[f"{col}_acc{acc}"] = subset[col].sum()
+
+            # Sum each forecast variable over the selected months
+            sums = subset[value_columns].sum()
+
+            # Save each accumulated variable with an _accN suffix
+            for col, val in sums.items():
+                row[f"{col}_acc{acc}"] = val
 
         output_rows.append(row)
 
-    return pd.DataFrame(output_rows)
+    df_acc = pd.DataFrame(output_rows)
 
-def compute_skill(
-    df,
-    lakes,
-    components,
-    model,
-    accumulations=None,   # None = monthly, e.g. (3, 6) = accumulated
-    metrics=(
-        'RMSE', 'RMSE_ext',
-        'R2', 'R2_ext',
-        'Bias', 'Bias_ext',
-        'VarRatio', 'VarRatio_ext',
-        'NSE', 'NSE_ext',
-        'KGE', 'KGE_ext',
-        'CRPS', 'CRPS_ext'
-    ),
-    low=5,
-    high=95,
-    date_col='date'
-):
-    df_model = df[df['model'] == model].copy()
+    # Convert cfs_run back to YYYYMMDDHH string format if it is datetime-like
+    if pd.api.types.is_datetime64_any_dtype(df_acc["cfs_run"]):
+        df_acc["cfs_run"] = df_acc["cfs_run"].dt.strftime("%Y%m%d%H")
 
-    if accumulations is None:
-        accumulations = [None]
-    elif isinstance(accumulations, int):
-        accumulations = [accumulations]
-
-    def calc(metric, obs, pred, ens):
-        if len(obs) == 0:
-            return np.nan
-
-        if metric == 'RMSE':
-            return np.sqrt(mean_squared_error(obs, pred))
-
-        if metric == 'R2':
-            return r2_score(obs, pred) if len(obs) > 1 else np.nan
-
-        if metric == 'Bias':
-            return np.mean(pred - obs)
-
-        if metric == 'VarRatio':
-            return np.var(pred) / np.var(obs) if np.var(obs) != 0 else np.nan
-
-        if metric == 'NSE':
-            denom = np.sum((obs - np.mean(obs)) ** 2)
-            return 1 - np.sum((pred - obs) ** 2) / denom if denom != 0 else np.nan
-
-        if metric == 'KGE':
-            r = np.corrcoef(obs, pred)[0, 1] if len(obs) > 1 else np.nan
-            alpha = np.std(pred) / np.std(obs) if np.std(obs) != 0 else np.nan
-            beta = np.mean(pred) / np.mean(obs) if np.mean(obs) != 0 else np.nan
-
-            if np.any(np.isnan([r, alpha, beta])):
-                return np.nan
-
-            return 1 - np.sqrt((r - 1)**2 + (alpha - 1)**2 + (beta - 1)**2)
-
-        if metric == 'CRPS':
-            return np.mean([crps_ensemble(o, p) for o, p in zip(obs, ens)])
-
-        raise ValueError(f"Unknown metric: {metric}")
-
-    all_results = []
-
-    for acc in accumulations:
-
-        metric_store = {m: [] for m in metrics}
-
-        for lake in lakes:
-            for comp in components:
-
-                base_var = f"{lake}_{comp}"
-
-                if acc is None:
-                    pred_col = base_var
-                    obs_col = f"{base_var}_obs"
-                else:
-                    pred_col = f"{base_var}_acc{acc}"
-                    obs_col = f"{base_var}_obs_acc{acc}"
-
-                if pred_col not in df_model.columns or obs_col not in df_model.columns:
-                    continue
-
-                data = df_model[[date_col, pred_col, obs_col]].dropna()
-                grouped = data.groupby(date_col)
-
-                obs_list, pred_list = [], []
-
-                for _, g in grouped:
-                    obs = g[obs_col].iloc[0]
-                    preds = g[pred_col].values
-
-                    obs_list.append(obs)
-                    pred_list.append(preds)
-
-                if len(obs_list) == 0:
-                    continue
-
-                obs_arr = np.array(obs_list)
-                pred_mean = np.array([p.mean() for p in pred_list])
-
-                low_thr = np.percentile(obs_arr, low)
-                high_thr = np.percentile(obs_arr, high)
-                mask = (obs_arr <= low_thr) | (obs_arr >= high_thr)
-
-                obs_ext = obs_arr[mask]
-                pred_ext = pred_mean[mask]
-                ens_ext = [p for p, m in zip(pred_list, mask) if m]
-
-                for m in metrics:
-                    if m.endswith('_ext'):
-                        base_metric = m.replace('_ext', '')
-                        val = calc(base_metric, obs_ext, pred_ext, ens_ext)
-                    else:
-                        val = calc(m, obs_arr, pred_mean, pred_list)
-
-                    metric_store[m].append(val)
-
-        results = {
-            'Model': model,
-            'Accumulation': 'monthly' if acc is None else f'{acc} month'
-        }
-
-        for m in metrics:
-            vals = np.array(metric_store[m], dtype=float)
-            results[m] = np.nanmean(vals) if len(vals) > 0 else np.nan
-
-        all_results.append(results)
-
-    return pd.DataFrame(all_results)
+    return df_acc
