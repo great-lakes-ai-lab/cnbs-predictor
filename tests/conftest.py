@@ -1,3 +1,5 @@
+"""Shared pytest configuration: sets up the import path and registers custom markers."""
+
 import sys
 from pathlib import Path
 

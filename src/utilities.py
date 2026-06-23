@@ -1,3 +1,17 @@
+"""General-purpose helpers shared across the forecast tool.
+
+A grab-bag of small utilities used by the downloaders, processors, and
+notebooks:
+
+- :func:`check_url_exists` — test whether a remote resource is reachable
+- :func:`get_first_forecast_month` — derive the operational forecast month
+  from a reference date
+- :func:`get_date_range` — resolve the start/end dates for a CFS download,
+  either automatically (from the database) or from manual input
+- :func:`create_directory` — create a directory if it does not exist
+- :func:`get_files` — list files in a directory matching a prefix or suffix
+"""
+
 import requests
 from datetime import datetime
 import pandas as pd

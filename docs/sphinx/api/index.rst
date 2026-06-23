@@ -13,6 +13,7 @@ docstrings.
    data_loader
    data_processor
    database_utils
+   forecast_smoke
    hydro_utils
    plotting
    utilities

@@ -1,9 +1,13 @@
+"""
+Integration tests that verify live availability of upstream CFS data sources.
+
+Every test in this module reaches live external endpoints (NOAA AWS S3 /
+NCEI). They are marked `network` so the default CI run can exclude them
+(`pytest -m "not network"`); a scheduled job exercises them separately so a
+NOAA outage never blocks a PR. Run locally with `pytest -m network`.
+"""
+
 # To test use "pytest --capture=no test_data_inputs.py"
-#
-# Every test in this module reaches live external endpoints (NOAA AWS S3 /
-# NCEI). They are marked `network` so the default CI run can exclude them
-# (`pytest -m "not network"`); a scheduled job exercises them separately so a
-# NOAA outage never blocks a PR. Run locally with `pytest -m network`.
 
 import requests
 import boto3
@@ -24,6 +28,7 @@ pytestmark = [
 ]
 
 class TestURLAvailability:
+    """Checks the AWS and NCEI base endpoints are reachable and unchanged."""
 
     # Test to check AWS and NCEI URL are accessible
     def test_base_url_availability(self):
@@ -144,6 +149,7 @@ class TestCFSDataAvailability:
 
 @pytest.mark.integration
 class TestDataDownloader:
+    """Exercises CFSDownloader.download against the live AWS source."""
 
     def test_cfs_downloader_function(self, tmp_path):
         """

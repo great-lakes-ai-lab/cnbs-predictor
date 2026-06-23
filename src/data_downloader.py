@@ -1,3 +1,17 @@
+"""Downloaders for the forecast tool's external input data.
+
+Provides two classes:
+
+- :class:`CFSDownloader` retrieves Climate Forecast System v2 (CFSv2) GRIB2
+  forecast files from either the NOAA AWS public dataset or the NOAA NCEI
+  archive, organising them into per-date local subdirectories.
+- :class:`SSTDownloader` fetches Great Lakes surface water temperatures from
+  NOAA GLSEA ``.dat`` files, used as initial conditions for forecasting.
+
+Network access is required at run time; the heavy I/O dependencies (boto3,
+requests, BeautifulSoup) are mocked when building the documentation.
+"""
+
 import os
 import urllib.request
 import requests
@@ -305,7 +319,18 @@ class CFSDownloader:
             print(f"ERROR downloading from NCEI: {e}")
 
 class SSTDownloader:
+    """Download Great Lakes surface water temperatures from NOAA GLSEA.
+
+    GLSEA (Great Lakes Surface Environmental Analysis) publishes daily
+    lake-averaged surface water temperatures as plain-text ``.dat`` files.
+    This class parses those files into tidy, per-lake :class:`pandas.DataFrame`
+    objects (Superior, Michigan-Huron, Erie, Ontario) for use as forecast
+    initial conditions, with optional unit conversion and climatology
+    backfilling of missing dates.
+    """
+
     def __init__(self):
+        """Initialize the SSTDownloader. No configuration is required."""
         pass
 
     def current_glsea(self, url, units='K'):

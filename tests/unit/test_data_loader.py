@@ -43,6 +43,8 @@ def _require_files(*paths: Path):
 # glcc — Great Lakes Coordinated Committee monthly NBS, four CSVs
 # ===========================================================================
 class TestGLCCLoader:
+    """Tests the GLCC monthly NBS loader (``DataLoader.glcc``) against shipped CSVs."""
+
     LAKE_FILES = [
         "LakeSuperior_MonthlyNetBasinSupply_1900to2025.csv",
         "LakeMichiganHuron_MonthlyNetBasinSupply_1900to2025.csv",
@@ -58,33 +60,40 @@ class TestGLCCLoader:
 
     @pytest.fixture(autouse=True)
     def _check_data(self):
+        """Skip the GLCC tests cleanly if any lake CSV is missing."""
         _require_files(*[GLCC_DIR / f for f in self.LAKE_FILES])
 
     def test_returns_non_empty_dataframe(self):
+        """Returns a non-empty DataFrame for the shipped GLCC data."""
         df = DataLoader().glcc(str(GLCC_DIR))
         assert isinstance(df, pd.DataFrame)
         assert len(df) > 0
 
     def test_index_is_datetime(self):
+        """The output index is a DatetimeIndex named 'date'."""
         df = DataLoader().glcc(str(GLCC_DIR))
         assert isinstance(df.index, pd.DatetimeIndex)
         assert df.index.name == "date"
 
     def test_has_one_obs_column_per_lake(self):
+        """Output contains the expected per-lake ``*_nbs_obs`` columns."""
         df = DataLoader().glcc(str(GLCC_DIR))
         assert self.EXPECTED_COLS.issubset(set(df.columns))
 
     def test_observed_columns_are_numeric(self):
+        """Every per-lake observed column has a numeric dtype."""
         df = DataLoader().glcc(str(GLCC_DIR))
         for col in self.EXPECTED_COLS:
             assert pd.api.types.is_numeric_dtype(df[col]), f"{col} not numeric"
 
     def test_dates_are_monthly_first_of_month(self):
+        """Every date falls on the first of the month."""
         df = DataLoader().glcc(str(GLCC_DIR))
         # All dates should be the first of the month — no stray mid-month rows.
         assert (df.index.day == 1).all()
 
     def test_dates_are_unique(self):
+        """The date index has no duplicates."""
         df = DataLoader().glcc(str(GLCC_DIR))
         assert df.index.is_unique, "duplicate dates in GLCC output"
 
@@ -97,6 +106,7 @@ class TestGLCCLoader:
         )
 
     def test_units_mm_changes_values(self):
+        """Requesting mm units yields different values than cms (unit conversion applied)."""
         df_cms = DataLoader().glcc(str(GLCC_DIR), units="cms")
         df_mm = DataLoader().glcc(str(GLCC_DIR), units="mm")
         # Same shape, but mm values are scaled by lake area + seconds-in-month.
@@ -123,26 +133,32 @@ class TestGLCCLoader:
 # l2swbm — Large Lake Statistical Water Balance Model, 12 CSVs
 # ===========================================================================
 class TestL2SWBMLoader:
+    """Tests the L2SWBM loader (``DataLoader.l2swbm``) against shipped CSVs."""
+
     LAKES = ["superior", "michigan-huron", "erie", "ontario"]
     VARS = ["Evap", "Runoff", "Precip"]
 
     @staticmethod
     def _filename(lake: str, var: str) -> str:
+        """Return the L2SWBM CSV filename for a given lake and variable."""
         token = "miHuron" if lake == "michigan-huron" else lake
         return f"{token}{var}_MonthlyRun.csv"
 
     @pytest.fixture(autouse=True)
     def _check_data(self):
+        """Skip the L2SWBM tests cleanly if any (lake, variable) CSV is missing."""
         files = [L2SWBM_DIR / self._filename(lake, var)
                  for lake in self.LAKES for var in self.VARS]
         _require_files(*files)
 
     def test_returns_non_empty_dataframe(self):
+        """Returns a non-empty DataFrame for the shipped L2SWBM data."""
         df = DataLoader().l2swbm(str(L2SWBM_DIR))
         assert isinstance(df, pd.DataFrame)
         assert len(df) > 0
 
     def test_index_is_datetime(self):
+        """The output index is a DatetimeIndex named 'date'."""
         df = DataLoader().l2swbm(str(L2SWBM_DIR))
         assert isinstance(df.index, pd.DatetimeIndex)
         assert df.index.name == "date"
@@ -162,6 +178,7 @@ class TestL2SWBMLoader:
         assert not missing, f"missing required columns: {missing}"
 
     def test_all_value_columns_are_numeric(self):
+        """Every value column has a numeric dtype."""
         df = DataLoader().l2swbm(str(L2SWBM_DIR))
         for col in df.columns:
             assert pd.api.types.is_numeric_dtype(df[col]), f"{col} not numeric"
@@ -199,6 +216,7 @@ class TestL2SWBMLoader:
             assert (df[col] < 1000).all(), f"{col} has implausibly large positive values"
 
     def test_runoff_non_negative(self):
+        """Sanity: runoff values are never negative."""
         df = DataLoader().l2swbm(str(L2SWBM_DIR))
         for col in [c for c in df.columns if c.endswith("_runoff_obs")]:
             assert (df[col] >= 0).all(), f"{col} has negative values"
@@ -208,18 +226,23 @@ class TestL2SWBMLoader:
 # glsea — Surface temperature, single whitespace-separated CSV
 # ===========================================================================
 class TestGLSEALoader:
+    """Tests the GLSEA surface-temperature loader (``DataLoader.glsea``)."""
+
     EXPECTED_COLS = ["superior_sst", "michigan-huron_sst", "erie_sst", "ontario_sst"]
 
     @pytest.fixture(autouse=True)
     def _check_data(self):
+        """Skip the GLSEA tests cleanly if the SST CSV is missing."""
         _require_files(GLSEA_FILE)
 
     def test_returns_non_empty_dataframe(self):
+        """Returns a non-empty DataFrame for the shipped GLSEA data."""
         df = DataLoader().glsea(str(GLSEA_FILE))
         assert isinstance(df, pd.DataFrame)
         assert len(df) > 0
 
     def test_index_is_datetime(self):
+        """The output index is a DatetimeIndex."""
         df = DataLoader().glsea(str(GLSEA_FILE))
         assert isinstance(df.index, pd.DatetimeIndex)
 
@@ -233,6 +256,7 @@ class TestGLSEALoader:
         assert list(df.columns) == self.EXPECTED_COLS
 
     def test_values_are_numeric(self):
+        """Every temperature column has a numeric dtype."""
         df = DataLoader().glsea(str(GLSEA_FILE))
         for col in df.columns:
             assert pd.api.types.is_numeric_dtype(df[col]), f"{col} not numeric"
@@ -249,6 +273,7 @@ class TestGLSEALoader:
         assert (non_nan < 310).all().all(), "GLSEA Kelvin values implausibly hot"
 
     def test_celsius_units_in_lake_temperature_range(self):
+        """With units='C', values fall in a plausible Celsius lake-temperature range."""
         df = DataLoader().glsea(str(GLSEA_FILE), units="C")
         non_nan = df.dropna()
         assert (non_nan > -5).all().all(), "GLSEA Celsius values implausibly cold"
@@ -268,6 +293,7 @@ class TestGLSEALoader:
         assert (mh >= all_min).all() and (mh <= all_max).all()
 
     def test_unsupported_units_raises(self):
+        """An unsupported units argument raises ValueError."""
         with pytest.raises(ValueError, match="Unsupported units"):
             DataLoader().glsea(str(GLSEA_FILE), units="F")
 
@@ -276,6 +302,8 @@ class TestGLSEALoader:
 # lake_probabilities — 4 lake CSVs of probability of exceedance × 12 months
 # ===========================================================================
 class TestLakeProbabilitiesLoader:
+    """Tests the lake-probabilities loader (``DataLoader.lake_probabilities``)."""
+
     LAKE_FILES = ["SUP.probs.csv", "MIH.probs.csv", "ERI.probs.csv", "ONT.probs.csv"]
     LAKES = ["superior", "michigan-huron", "erie", "ontario"]
     MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
@@ -283,28 +311,34 @@ class TestLakeProbabilitiesLoader:
 
     @pytest.fixture(autouse=True)
     def _check_data(self):
+        """Skip the probabilities tests cleanly if any lake CSV is missing."""
         _require_files(*[PROBABILITIES_DIR / f for f in self.LAKE_FILES])
 
     @pytest.fixture
     def probs_dir(self):
+        """Return the probabilities directory with a trailing separator for the loader."""
         # Loader uses string concat (file_dir + filename), so trailing sep needed.
         return str(PROBABILITIES_DIR) + "/"
 
     def test_returns_long_format(self, probs_dir):
+        """Returns a long-format DataFrame with the expected four columns."""
         df = DataLoader().lake_probabilities(probs_dir)
         assert list(df.columns) == ["month", "lake", "prob_exceedance", "value"]
 
     def test_has_all_four_lakes(self, probs_dir):
+        """Output covers all four lakes."""
         df = DataLoader().lake_probabilities(probs_dir)
         assert set(df["lake"].unique()) == set(self.LAKES)
 
     def test_has_all_twelve_months_per_lake(self, probs_dir):
+        """Each lake has all twelve months represented."""
         df = DataLoader().lake_probabilities(probs_dir)
         for lake in self.LAKES:
             months_for_lake = set(df[df["lake"] == lake]["month"])
             assert months_for_lake == set(self.MONTHS), f"{lake} missing months"
 
     def test_prob_exceedance_is_float(self, probs_dir):
+        """The prob_exceedance column has a float dtype."""
         df = DataLoader().lake_probabilities(probs_dir)
         assert pd.api.types.is_float_dtype(df["prob_exceedance"])
 
@@ -319,6 +353,7 @@ class TestLakeProbabilitiesLoader:
         assert (df["value"].abs() < 100000).all()
 
     def test_mm_units_changes_values(self, probs_dir):
+        """Requesting mm units yields different values than cms (unit conversion applied)."""
         df_cms = DataLoader().lake_probabilities(probs_dir, units="cms")
         df_mm = DataLoader().lake_probabilities(probs_dir, units="mm")
         assert df_cms.shape == df_mm.shape

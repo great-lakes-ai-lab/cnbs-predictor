@@ -1,3 +1,17 @@
+"""Hydrological and unit-conversion helpers for the forecast pipeline.
+
+Small, mostly stateless functions used throughout data processing and
+forecasting:
+
+- time helpers (:func:`seconds_in_month`, :func:`get_first_forecast_month`)
+- grid geometry (:func:`calculate_grid_cell_areas`)
+- physical conversions (:func:`calculate_evaporation_rate`,
+  :func:`convert_mm_to_cms`)
+- model loading (:func:`load_model`)
+
+Lake surface areas and other constants are defined inline where used.
+"""
+
 import calendar
 import numpy as np
 import pandas as pd

@@ -1,4 +1,10 @@
 # tests/test_seasonal_cycle_processor.py
+"""
+Unit tests for ``SeasonalCycleProcessor`` in ``src/data_processor.py``.
+
+Uses a tiny synthetic monthly DataFrame to check the transform/inverse-transform
+roundtrip, monthly climatology anomaly indexing, and the fit/transform guardrails.
+"""
 
 import numpy as np
 import pandas as pd

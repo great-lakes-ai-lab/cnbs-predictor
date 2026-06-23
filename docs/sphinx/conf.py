@@ -22,7 +22,7 @@ sys.path.insert(0, REPO_ROOT)
 project = "cnbs-predictor"
 author = "Great Lakes AI Lab"
 copyright = f"{datetime.now():%Y}, {author}"
-release = "0.1"
+release = "1.2.0"
 
 # -- General configuration ---------------------------------------------------
 extensions = [
@@ -74,6 +74,7 @@ autodoc_mock_imports = [
     "joblib",
     "matplotlib",
     "plotly",
+    "cartopy",
     "properscoring",
     "bs4",
     "requests_toolbelt",

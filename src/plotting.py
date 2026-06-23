@@ -1,4 +1,20 @@
-# forecast_visualizer.py
+"""Visualization functions for Great Lakes NBS forecast output.
+
+Produces the figures used to inspect and communicate forecast results:
+
+- :func:`plot_cnbs_forecast` — static 4x4 grid (lake x component) of the
+  precipitation, evaporation, runoff, and NBS forecasts with 95% ranges
+- :func:`plot_cnbs_forecast_interactive` — the same grid as an interactive
+  Plotly figure saved to HTML
+- :func:`plot_nbs_forecast` — per-lake NBS forecast with climatology overlay
+- :func:`plot_cep_timeseries` — Climatology Exceedance Probability (CEP)
+  timeseries per lake
+- :func:`plot_cep_spatial` — month-by-month spatial CEP maps over the basin
+
+Each function optionally saves to ``filename`` and otherwise displays the
+figure. The plotting backends (matplotlib, plotly, cartopy) are mocked when
+building the documentation.
+"""
 
 import os
 import pandas as pd
@@ -534,6 +550,36 @@ def plot_cep_spatial(
     cmap="BrBG_r",
     title="Great Lakes 12-Month NBS Climatology Exceedance Outlook"
 ):
+    """
+    Plot a 12-panel spatial map of Climatology Exceedance Probability (CEP).
+
+    Renders one map per forecast month (up to twelve) over the Great Lakes
+    basin, shading each lake polygon by its CEP value on a diverging
+    wetter-to-drier colour scale.
+
+    Parameters
+    ----------
+    df_cep : pd.DataFrame
+        CEP data. Must contain 'forecast_month', 'lake', and the column named
+        by ``value_col`` (and a 'cep' column used for labels).
+    model : str, optional
+        If given, plot only this model. If None, the multi-model mean across
+        models is plotted.
+    value_col : str, default "cep"
+        Column used to colour each lake polygon.
+    filename : str, optional
+        Path to save the figure. If None, the figure is displayed only.
+    cmap : str, default "BrBG_r"
+        Matplotlib colormap name for the diverging wetter/drier scale.
+    title : str, optional
+        Base figure title; the selected model (or "Multi-model Mean") is
+        appended.
+
+    Returns
+    -------
+    matplotlib.figure.Figure
+        The created figure.
+    """
     df = df_cep.copy()
     df["date"] = pd.to_datetime(df["forecast_month"])
     df["lake"] = df["lake"].str.lower().str.strip()

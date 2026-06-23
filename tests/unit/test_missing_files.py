@@ -25,6 +25,8 @@ from src.data_processor import SeasonalCycleProcessor
 # load_model — both error branches in its documented contract
 # ===========================================================================
 class TestLoadModel:
+    """Tests ``load_model`` error branches for unknown names and missing files."""
+
     def test_unknown_model_name_raises_value_error(self):
         """If model_name isn't in models_info, raise ValueError with a clear message."""
         models_info = [{"model": "GP", "path": "/tmp/gp.joblib"}]
@@ -42,7 +44,10 @@ class TestLoadModel:
 # SeasonalCycleProcessor.load — relies on pandas / open() to raise
 # ===========================================================================
 class TestSeasonalCycleProcessorLoad:
+    """Tests ``SeasonalCycleProcessor.load`` raises when its inputs are missing."""
+
     def test_missing_climatology_raises_file_not_found(self, tmp_path):
+        """A missing climatology CSV raises FileNotFoundError."""
         bad_path = str(tmp_path / "no_such_climatology.csv")
         meta_path = tmp_path / "meta.json"
         meta_path.write_text("{}")
@@ -50,6 +55,7 @@ class TestSeasonalCycleProcessorLoad:
             SeasonalCycleProcessor.load(bad_path, str(meta_path))
 
     def test_missing_metadata_raises_file_not_found(self, tmp_path):
+        """A missing metadata JSON raises FileNotFoundError even when climatology exists."""
         # Create a real (empty) climatology so the first read succeeds far enough.
         clim = tmp_path / "clim.csv"
         clim.write_text("month,var_a\n1,0.0\n")
@@ -69,18 +75,22 @@ class TestDataLoaderMissingFiles:
     """
 
     def test_glcc_missing_directory_raises(self, tmp_path):
+        """glcc raises FileNotFoundError when its directory doesn't exist."""
         with pytest.raises(FileNotFoundError):
             DataLoader().glcc(str(tmp_path / "no_such_dir"))
 
     def test_l2swbm_missing_directory_raises(self, tmp_path):
+        """l2swbm raises FileNotFoundError when its directory doesn't exist."""
         with pytest.raises(FileNotFoundError):
             DataLoader().l2swbm(str(tmp_path / "no_such_dir"))
 
     def test_glsea_missing_file_raises(self, tmp_path):
+        """glsea raises FileNotFoundError when its file doesn't exist."""
         with pytest.raises(FileNotFoundError):
             DataLoader().glsea(str(tmp_path / "no_such_file.csv"))
 
     def test_lake_probabilities_missing_directory_raises(self, tmp_path):
+        """lake_probabilities raises FileNotFoundError when its directory doesn't exist."""
         # Loader uses string concatenation; pass with trailing separator.
         with pytest.raises(FileNotFoundError):
             DataLoader().lake_probabilities(str(tmp_path / "no_such_dir") + "/")
