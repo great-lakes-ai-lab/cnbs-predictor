@@ -13,7 +13,7 @@ Welcome to nbs-predictor! This software package is designed to forecast key comp
 
 ### Features
 - **Advanced Predictive Algorithms:** Leverages methods like Gaussian Processes and Random Forest for data-driven forecasting.
-- **Real-Time Data Processing:** Processes ureal time operational forecast data for up-to-date predictions.
+- **Real-Time Data Processing:** Processes real-time operational forecast data for up-to-date predictions.
 - **User-Friendly Interface:** Streamlined setup and interactive notebooks for ease of use.
 - **Continuous Improvements:** Actively maintained with regular updates to improve performance, expand functionality, and enhance modeling capabilities.
 
