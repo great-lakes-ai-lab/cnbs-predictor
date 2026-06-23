@@ -9,20 +9,20 @@
 </p>
 
 ## Overview
-Welcome to nbs-predictor! This software package is designed to forecast key components of Net Basin Supply (NBS) for the Laurentian Great Lakes using atmospheric forecast data. At present, it ingests NOAA's Climate Forecast System (CFS) data—which extends roughly nine months into the future—to forecast precipitation, evaporation, runoff, and NBS out to twelve months at monthly intervals.
+Welcome to nbs-predictor! This software package is designed to forecast key components of **Net Basin Supply (NBS)** for the Laurentian Great Lakes using atmospheric forecast data. Currently, the package uses forecast data from National Oceanic and Atmospheric Administration’s Climate Forecast System (CFS) to predict **precipitation**, **evaporation**, **runoff**, and **net basin supply (NBS)** at monthly intervals up to **12 months** into the future.
 
 ### Features
-- Advanced Predictive Algorithms: Leverages methods like Gaussian Processes for data-driven forecasting.
-- Real-Time Data Processing: Integrates live forecast data for up-to-date predictions.
-- User-Friendly Interface: Streamlined setup and interactive notebooks for ease of use.
-- Continuous Improvements: Regular updates to enhance features, performance, and modeling capabilities.
-
-### Targets
-Forecast precipitation (P), evaporation (E), runoff (R), and net basin supply (NBS) for all of the Laurentian Great Lakes up to twelve (12) months into the future at monthly intervals. By forecasting NBS directly, rather than deriving it from the individual component forecasts—we reduce the accumulation of error and improve overall forecast reliability.
+- **Advanced Predictive Algorithms:** Leverages methods like Gaussian Processes and Random Forest for data-driven forecasting.
+- **Real-Time Data Processing:** Processes ureal time operational forecast data for up-to-date predictions.
+- **User-Friendly Interface:** Streamlined setup and interactive notebooks for ease of use.
+- **Continuous Improvements:** Actively maintained with regular updates to improve performance, expand functionality, and enhance modeling capabilities.
 
 ### Inputs
-- Data Source: NOAA forecast data from the Climate Forecast System (CFS), which must be downloaded and preprocessed before generating forecasts. Additionally, sea surface temperatures from GLSEA are required as initial conditions. This repository includes notebooks to handle both downloading and preprocessing of both datasets. 
-- Required Datasets: Please refer to the 'Data Sources' section below for specific files and data organization.
+- **Data Source:** NOAA forecast data from the Climate Forecast System (CFS), which must be downloaded and preprocessed before generating forecasts. Additionally, sea surface temperatures from GLSEA are required as initial conditions. This repository includes notebooks to handle both downloading and preprocessing of both datasets. 
+- **Required Datasets:** Please refer to the 'Data Sources' section below for specific files and data organization.
+
+### Targets
+Forecast monthly **precipitation (P), evaporation (E), runoff (R), and net basin supply (NBS)** for all of the Laurentian Great Lakes twelve (12) months into the future. By forecasting NBS directly, rather than deriving it solely from the individual component forecasts `(NBS = P − E + R)`, the model minimizes accumulated uncertainty and improves reliability.
 
 ### Data Sources
 
@@ -31,8 +31,8 @@ Forecast precipitation (P), evaporation (E), runoff (R), and net basin supply (N
 | CFSR         | Climate Forecast System Reanalysis             | NOAA           | Training       |
 | CFS          | Climate Forecast System v2                     | NOAA           | Forecasting    |
 | GLSEA        | Great Lakes Surface Environmental Analysis     | NOAA GLERL     | Forecasting |
-| LS2SWBM      | Large Lake Statistical Water Balance Model     | NOAA GLERL     | Training    |
-| GLCC         | Great Lakes Coordinating Committee             |                | Training |
+| L2SWBM       | Large Lake Statistical Water Balance Model     | NOAA GLERL     | Training    |
+| GLCC         | Great Lakes Coordinating Committee             | USACE / ECCC   | Training |
 
 
 ## Getting Started
@@ -101,32 +101,54 @@ jupyter lab
 
 ```graphql
 cnbs-predictor/
+├── assets                                      # Project logos and branding assets
+├── CITATION.cff                                # Citation metadata for the project
 ├── CODE_OF_CONDUCT.md                          # Code of conduct for contributors
-├── CONTRIBUTING.md                             # Project license
-├── data                                        # Directory for storing input data
+├── CONTRIBUTING.md                             # Contribution guidelines
+├── data                                        # Directory for storing input and forecast data
 │   ├── cfs                                     # Archived pre-processed CFS data
-|   ├── cfsr                                    # Archived pre-processed CFSR data used for training
-│   ├── glcc                                    # NBS Observations from GLCC used for training and validation
-│   ├── glsea                                   # GLSEA Sea Surface Temperatures for the Great Lakes
-│   ├── input                                   # Model inputs for forecasting (ML models, scalers, masks, etc.)
-│   ├── l2swbm                                  # L2SWBM target data (P, E, R)
-│   ├── probabilities                           # Probability files from USACE (update as needed)
-│   ├── snodas                                  # SNODAS file from USACE (update as needed)
-├── docs                                        # Documents
-├── forecast                                    # Folder to save the forecast output
+│   ├── cfsr                                    # Archived pre-processed CFSR data used for training
+│   ├── forecast                                # Forecast output data
+│   ├── glcc                                    # NBS observations from GLCC used for training and validation
+│   ├── glsea                                   # GLSEA surface water temperature data
+│   ├── input                                   # Model inputs, trained models, scalers, masks, etc.
+│   ├── l2swbm                                  # L2SWBM target data for precipitation, evaporation, and runoff
+│   ├── probabilities                           # USACE probability files used for CEP calculations
+│   └── snodas                                  # SNODAS snow data used for model inputs
+├── docs                                        # Project documentation and supporting materials
+│   ├── development_history.md                  # Notes on project development and changes
+│   ├── experiment_skill_metrics.md             # Skill metric summaries from model experiments
+│   ├── experiments.md                          # Experiment descriptions and results
+│   ├── Great Lakes NBS Predictor Flyer.pdf     # Project flyer
+│   ├── sphinx                                  # Sphinx documentation source files
+│   └── wiki-drafts                             # Draft content for GitHub wiki pages
+├── images                                      # Team member or project-related images
 ├── LICENSE                                     # Project license
 ├── notebooks                                   # Jupyter notebooks
-│   ├── exploratory                             # Initial exploration and additionally helpful notebooks
-│   ├── production                              # Production-ready notebooks (use these to produce forecasts)
-│   └── validation                              # Notebooks used for verification and validation
-├── README.md                                   # Project README file
-├── requirements                                # Conda environment requirements
-├── ROADMAP.md                                  # Release schedule and CI/CD implementation plan
-├── src                                         # Source code for data processing and utilities
-└── tests                                       # Tests for the codebase
-    ├── integration                             # Integration tests for testing multiple components
-    └── unit                                    # Unit tests for quick testing of functions and data availability
-```
+│   ├── exploratory                             # Exploratory and development notebooks
+│   ├── production                              # Production-ready notebooks for generating forecasts
+│   └── validation                              # Notebooks for model validation
+├── README.md                                   # Project overview and setup instructions
+├── requirements                                # Conda environment files
+│   ├── environment-test.yml                    # Testing environment
+│   └── environment.yml                         # Main project environment
+├── ROADMAP.md                                  # Project roadmap and planned improvements
+├── SECURITY.md                                 # Security policy and reporting guidance
+├── src                                         # Source code for data processing, modeling, and utilities
+│   ├── data_downloader.py                      # Utilities for downloading input datasets
+│   ├── data_loader.py                          # Functions for loading data
+│   ├── data_processor.py                       # Data cleaning, transformation, and preprocessing tools
+│   ├── database_utils.py                       # Database creation, querying, and management utilities
+│   ├── forecast_smoke.py                       # Forecast smoke tests or quick forecast checks
+│   ├── hydro_utils.py                          # Hydrologic calculation utilities
+│   ├── plotting.py                             # Plotting and visualization functions
+│   └── utilities.py                            # General helper functions
+└── tests                                       # Test suite
+    ├── conftest.py                             # Shared pytest fixtures and configuration
+    ├── fixtures                                # Test fixture data
+    ├── integration                             # Integration tests across multiple components
+    └── unit                                    # Unit tests for individual functions
+    ```
 
 ## Contributing
 We welcome contributions to cnbs-predictor! Please start a discussion with the maintainers first (@lefitzpatrick, @danijonesocean), preferably in the GitHub Discussions or Issues sections of this repository. Once you have discussed possible changes with the developers:
