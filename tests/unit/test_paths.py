@@ -99,16 +99,19 @@ class TestCreateDirectoryAcceptsBothStrAndPath:
     """
 
     def test_str_input_creates_directory(self, tmp_path):
+        """Creates the directory when given a str path."""
         target = tmp_path / "from_str"
         create_directory(str(target))
         assert target.is_dir()
 
     def test_path_input_creates_directory(self, tmp_path):
+        """Creates the directory when given a pathlib.Path."""
         target = tmp_path / "from_path"
         create_directory(target)  # pathlib.Path, not str
         assert target.is_dir()
 
     def test_str_and_path_inputs_are_equivalent(self, tmp_path):
+        """str and Path inputs both create their directories equivalently."""
         a = tmp_path / "a"
         b = tmp_path / "b"
         create_directory(str(a))
@@ -125,13 +128,16 @@ class TestGetFilesAcceptsBothStrAndPath:
     """
 
     def _populate(self, d: Path):
+        """Create a couple of sample files in directory ``d``."""
         (d / "alpha.csv").write_text("x")
         (d / "beta.txt").write_text("x")
 
     def test_str_input_does_not_raise(self, tmp_path):
+        """get_files accepts a str directory without raising."""
         self._populate(tmp_path)
         get_files(str(tmp_path), affix="suffix", identifier=".csv")
 
     def test_path_input_does_not_raise(self, tmp_path):
+        """get_files accepts a pathlib.Path directory without raising."""
         self._populate(tmp_path)
         get_files(tmp_path, affix="suffix", identifier=".csv")

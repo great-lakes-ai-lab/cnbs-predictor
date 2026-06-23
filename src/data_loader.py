@@ -1,3 +1,20 @@
+"""Loaders for observed and training datasets used by the forecast tool.
+
+This module reads the various on-disk datasets the model is trained and
+validated against, returning each as a tidy, date-indexed
+:class:`pandas.DataFrame`:
+
+- **GLCC** observed Net Basin Supply (:meth:`DataLoader.glcc`)
+- **L2SWBM** precipitation, evaporation, and runoff (:meth:`DataLoader.l2swbm`)
+- **GLSEA** lake surface temperatures (:meth:`DataLoader.glsea`)
+- **SNODAS** snow water equivalent (:meth:`DataLoader.snodas`)
+- USACE probability-of-exceedance tables (:meth:`DataLoader.lake_probabilities`)
+
+Several loaders accept a ``units`` argument and convert between cubic metres
+per second (``cms``) and millimetres per month (``mm``) using the per-lake
+surface areas in :data:`lake_areas`.
+"""
+
 import pandas as pd
 import numpy as np
 import calendar
@@ -12,7 +29,15 @@ lake_areas = {
 }
 
 class DataLoader:
+    """Load the observed and training datasets used to fit and validate models.
+
+    Each method reads one dataset family from a local directory and returns a
+    cleaned, date-indexed :class:`pandas.DataFrame`. The loader is stateless;
+    all paths and options are passed per call.
+    """
+
     def __init__(self):
+        """Initialize the DataLoader. No configuration is required."""
         pass
 
     def glcc(self, directory, units='cms'):
@@ -238,6 +263,7 @@ class DataLoader:
         file_dir : str
             Path to the directory containing the lake probability CSV files.
             Expected files are:
+
             - SUP.probs.csv  (Lake Superior)
             - MIH.probs.csv  (Lakes Michigan-Huron)
             - ERI.probs.csv  (Lake Erie)
@@ -245,14 +271,16 @@ class DataLoader:
 
         units : str, optional, default="cms"
             Desired output units for flow values.
+
             - "cms" : cubic meters per second (original units from source files)
             - "mm"  : millimeters per month, computed using lake surface area
-                    and number of days in each month.
+              and number of days in each month.
 
         Returns
         -------
         pandas.DataFrame
             A tidy DataFrame containing columns:
+
             - "month" : str, calendar month (Jan–Dec)
             - "lake" : str, lake name ("superior", "michigan-huron", "erie", "ontario")
             - "prob_exceedance" : float, probability of exceedance (0.99–0.01)
@@ -260,11 +288,11 @@ class DataLoader:
 
         Notes
         -----
-        - When units="mm", values are converted from m³/s to mm/month using:
-            value_mm = value_cms * 1000 * 86400 * days_in_month / lake_area
-            where lake_area is the surface area of each lake in m².
+        - When units="mm", values are converted from m³/s to mm/month using
+          ``value_mm = value_cms * 1000 * 86400 * days_in_month / lake_area``,
+          where ``lake_area`` is the surface area of each lake in m².
         - Input CSVs are assumed to have 7 header rows before the data block,
-        and contain a column named "Probability Of Exceedance".
+          and contain a column named "Probability Of Exceedance".
 
         Example
         -------

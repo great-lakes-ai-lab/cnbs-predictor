@@ -1,3 +1,28 @@
+"""Core processing, transformation, and forecasting logic for CFS data.
+
+This module is the heart of the ``src`` package. It turns raw CFS GRIB files
+into lake-averaged variables and runs them through trained models to produce
+NBS forecasts. The main components are:
+
+- :class:`CFSProcessor` — read CFS GRIB files, remap to the basin mask, and
+  store lake/land-averaged precipitation, temperature, and evaporation.
+- :class:`SeasonalCycleProcessor` — fit a monthly climatology and convert
+  between absolute values and anomalies (including lead-wide helpers).
+- :class:`CFSTransformer` — reshape and feature-engineer the processed data
+  (filtering, lag/lead shifts, wide-format structuring, time features).
+- :class:`CNBSForecaster` — load trained models and scalers and generate
+  forecasts in either absolute or anomaly mode.
+- :class:`ForecastTransformer` — reshape forecast output between wide and
+  long/tidy formats and filter by forecast month.
+- :class:`CEPCalculator` — compute Climatology Exceedance Probabilities from
+  forecasts and probability-of-exceedance curves.
+- :func:`calculate_acc_variables` — accumulate forecast values over multi-month
+  windows.
+
+Heavy dependencies (cfgrib, netCDF4, xarray, scikit-learn, properscoring) are
+imported at module scope and mocked when building the documentation.
+"""
+
 import os
 import pandas as pd
 import cfgrib
@@ -18,6 +43,21 @@ from src.database_utils import CFSDatabase
 from src.hydro_utils import calculate_evaporation_rate, calculate_grid_cell_areas
 
 class CFSProcessor:
+    """Process downloaded CFS GRIB files into lake-averaged variables.
+
+    Reads CFS forecast GRIB2 files for a run, remaps the relevant fields
+    (precipitation, 2-metre air temperature, evaporation from latent heat
+    flux) onto a basin mask grid, computes area-weighted lake/land averages,
+    and writes the results to the forecast database via :class:`CFSDatabase`.
+
+    Parameters
+    ----------
+    database : str
+        Path to the SQLite database file used for output.
+    table : str
+        Name of the table to write processed values into.
+    """
+
     def __init__(self, database, table):
         """
         Initialize the processor with database path and table name.
@@ -396,16 +436,13 @@ class SeasonalCycleProcessor:
             If None, all numeric columns are used.
 
         baseline_time : slice, optional
-            Time slice applied before computing climatology.
-            Example:
-                slice("1981-01-01", "2008-12-01")
-
-            If None, full DataFrame is used.
+            Time slice applied before computing climatology, e.g.
+            ``slice("1981-01-01", "2008-12-01")``. If None, the full DataFrame
+            is used.
 
         baseline_definition : dict, optional
-            Metadata describing baseline choice (for reproducibility).
-            Example:
-                {"train_start": "1981-01-01", "train_end": "2008-12-01"}
+            Metadata describing baseline choice (for reproducibility), e.g.
+            ``{"train_start": "1981-01-01", "train_end": "2008-12-01"}``.
 
         Returns
         -------
@@ -541,11 +578,8 @@ class SeasonalCycleProcessor:
         Returns
         -------
         dict
-            Dictionary containing:
-                {
-                    "climatology_path": <path>,
-                    "metadata_path": <path>
-                }
+            Dictionary containing the keys ``"climatology_path"`` and
+            ``"metadata_path"``, each mapping to the path of the written file.
         """
 
         if self.climatology is None:
@@ -737,17 +771,15 @@ class SeasonalCycleProcessor:
 
         For each column:
 
-        1. The forecast lead month is extracted using the `_mo{k}` suffix.
+        1. The forecast lead month is extracted using the ``_mo{k}`` suffix.
         2. The base variable name is identified by removing the suffix.
         3. The verifying month is computed by shifting the initialization date
-        forward by the forecast lead.
-        4. The corresponding monthly climatology is subtracted from the forecast
-        value.
+           forward by the forecast lead.
+        4. The corresponding monthly climatology is subtracted from the
+           forecast value.
 
-        The verifying month is calculated as:
-
-            verifying_month =
-                initialization_date + forecast_lead_months
+        The verifying month is calculated as
+        ``verifying_month = initialization_date + forecast_lead_months``.
 
         This ensures that climatology subtraction is aligned with the actual
         target month being forecasted rather than the initialization month.
@@ -916,6 +948,21 @@ class SeasonalCycleProcessor:
         return scp_X, scp_y
 
 class CFSTransformer:
+    """Reshape and feature-engineer processed CFS data for modelling.
+
+    Wraps a :class:`pandas.DataFrame` of processed CFS values and provides
+    transformations used to build the model input matrix: filtering to recent
+    runs (:meth:`filter`), creating lagged/lead columns
+    (:meth:`shift_variables`), pivoting long data into the wide per-lead
+    feature layout (:meth:`structure_input`), and adding cyclical month and
+    time-trend features (:meth:`add_time_features`).
+
+    Parameters
+    ----------
+    df : pandas.DataFrame
+        The processed CFS data to transform. Copied on construction.
+    """
+
     def __init__(self, df):
         """
         Initialize the transformer with a pandas DataFrame.
@@ -1229,6 +1276,25 @@ class CFSTransformer:
         return out
         
 class CNBSForecaster:
+    """Load trained models and scalers and generate NBS forecasts.
+
+    On construction, loads the input/output scalers and all trained models
+    found in the given directories, selecting the ``_anom`` artifacts when
+    ``mode='anomaly'``. :meth:`predict` runs a named model over a feature
+    matrix and returns a forecast DataFrame, converting anomalies back to
+    absolute values when operating in anomaly mode.
+
+    Parameters
+    ----------
+    model_dir : str
+        Directory containing the trained model ``.joblib`` files.
+    scaler_dir : str
+        Directory containing the input/output scaler ``.joblib`` files.
+    mode : str, default "actual"
+        Either ``"actual"`` (absolute values) or ``"anomaly"`` (anomalies
+        relative to climatology).
+    """
+
     def __init__(self, model_dir, scaler_dir, mode="actual"):
         """
         Initialize the ForecastModel class.
@@ -1290,6 +1356,21 @@ class CNBSForecaster:
             )
 
     def _load_models(self, suffix):
+        """
+        Load all trained models matching the given filename suffix.
+
+        Parameters
+        ----------
+        suffix : str
+            Suffix selecting the model variant (e.g. ``""`` for absolute or
+            ``"_anom"`` for anomaly models). Files named
+            ``{name}_trained_model{suffix}.joblib`` are loaded.
+
+        Returns
+        -------
+        dict
+            Mapping of model name to the deserialized model object.
+        """
         models = {}
         for file in os.listdir(self.model_dir):
             if file.endswith(f"_trained_model{suffix}.joblib"):
@@ -1710,13 +1791,11 @@ def calculate_acc_variables(
     data by `forecast_month` and sums the first N forecast months for each
     requested accumulation period.
 
-    For example:
-        accumulation_periods=(1, 3, 6)
+    For example, ``accumulation_periods=(1, 3, 6)`` will create:
 
-    will create:
-        variable_acc1 = month 1
-        variable_acc3 = months 1-3 summed
-        variable_acc6 = months 1-6 summed
+    - ``variable_acc1`` = month 1
+    - ``variable_acc3`` = months 1-3 summed
+    - ``variable_acc6`` = months 1-6 summed
 
     Parameters
     ----------

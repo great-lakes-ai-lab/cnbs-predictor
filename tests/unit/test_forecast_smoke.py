@@ -34,6 +34,7 @@ FIXTURE = REPO_ROOT / "tests" / "fixtures" / "forecasts" / "CNBS_forecast_wide.t
 
 
 def _load_fixture():
+    """Load the shipped forecast fixture TSV as a DataFrame with string id columns."""
     return pd.read_csv(FIXTURE, sep="\t", dtype={"cfs_run": str, "forecast_month": str})
 
 
@@ -58,13 +59,18 @@ def _toy_forecast():
 # Fixture loads cleanly and all checks pass on it
 # ===========================================================================
 class TestFixturePasses:
+    """The shipped fixture loads and passes the full smoke check."""
+
     def test_fixture_file_exists(self):
+        """The shipped forecast fixture file is present on disk."""
         assert FIXTURE.exists(), f"missing fixture: {FIXTURE}"
 
     def test_smoke_check_forecast_passes_on_fixture(self):
+        """smoke_check_forecast passes on the shipped fixture without raising."""
         smoke_check_forecast(_load_fixture())
 
     def test_smoke_check_forecast_passes_on_toy(self):
+        """smoke_check_forecast passes on a synthetic all-lakes forecast."""
         smoke_check_forecast(_toy_forecast())
 
 
@@ -72,41 +78,51 @@ class TestFixturePasses:
 # smoke_check_schema
 # ===========================================================================
 class TestSmokeCheckSchema:
+    """Schema validation: required columns, lake names, and id-column formats."""
+
     def test_passes_on_healthy_dataframe(self):
+        """Passes on the healthy fixture DataFrame."""
         smoke_check_schema(_load_fixture())
 
     def test_rejects_non_dataframe(self):
+        """Rejects input that isn't a pandas DataFrame."""
         with pytest.raises(ValueError, match="Expected pandas DataFrame"):
             smoke_check_schema({"not": "a df"})
 
     def test_rejects_empty_dataframe(self):
+        """Rejects an empty DataFrame even with the right columns."""
         empty = pd.DataFrame(columns=list(REQUIRED_COLUMNS))
         with pytest.raises(ValueError, match="empty"):
             smoke_check_schema(empty)
 
     def test_rejects_missing_component_column(self):
+        """Rejects a DataFrame missing a required component column."""
         df = _load_fixture().drop(columns=["nbs"])
         with pytest.raises(ValueError, match="missing required columns"):
             smoke_check_schema(df)
 
     def test_rejects_missing_id_column(self):
+        """Rejects a DataFrame missing a required id column."""
         df = _load_fixture().drop(columns=["forecast_month"])
         with pytest.raises(ValueError, match="missing required columns"):
             smoke_check_schema(df)
 
     def test_rejects_unexpected_lake_name(self):
+        """Rejects a lake name outside EXPECTED_LAKES."""
         df = _load_fixture()
         df.loc[0, "lake"] = "saint-clair"
         with pytest.raises(ValueError, match="unexpected lake names"):
             smoke_check_schema(df)
 
     def test_rejects_bad_cfs_run_format(self):
+        """Rejects a cfs_run that isn't a 10-digit string."""
         df = _load_fixture()
         df.loc[0, "cfs_run"] = "20240904"  # 8 digits, not 10
         with pytest.raises(ValueError, match="cfs_run"):
             smoke_check_schema(df)
 
     def test_rejects_bad_forecast_month_format(self):
+        """Rejects a forecast_month not in YYYY-MM format."""
         df = _load_fixture()
         df.loc[0, "forecast_month"] = "Sep 2024"
         with pytest.raises(ValueError, match="forecast_month"):
@@ -124,28 +140,35 @@ class TestSmokeCheckSchema:
 # smoke_check_no_nans
 # ===========================================================================
 class TestSmokeCheckNoNans:
+    """NaN/sentinel validation across component and id columns."""
+
     def test_passes_on_healthy_dataframe(self):
+        """Passes on the healthy fixture with no NaNs or sentinels."""
         smoke_check_no_nans(_load_fixture())
 
     def test_rejects_nan_in_component_column(self):
+        """Rejects a NaN in a component column."""
         df = _load_fixture()
         df.loc[0, "precipitation"] = np.nan
         with pytest.raises(ValueError, match="NaN values"):
             smoke_check_no_nans(df)
 
     def test_rejects_nan_in_id_column(self):
+        """Rejects a NaN in an id column."""
         df = _load_fixture()
         df.loc[0, "forecast_month"] = np.nan
         with pytest.raises(ValueError, match="NaN values"):
             smoke_check_no_nans(df)
 
     def test_rejects_glcc_sentinel_fill_value(self):
+        """Rejects the GLCC -99990 sentinel fill value."""
         df = _load_fixture()
         df.loc[0, "nbs"] = -99990.0
         with pytest.raises(ValueError, match="sentinel fill"):
             smoke_check_no_nans(df)
 
     def test_rejects_alt_sentinel_fill_value(self):
+        """Rejects the alternate -9999 sentinel fill value."""
         df = _load_fixture()
         df.loc[0, "evaporation"] = -9999.0
         with pytest.raises(ValueError, match="sentinel fill"):
@@ -156,7 +179,10 @@ class TestSmokeCheckNoNans:
 # smoke_check_ranges
 # ===========================================================================
 class TestSmokeCheckRanges:
+    """Physical-range validation for forecast component values."""
+
     def test_passes_on_healthy_dataframe(self):
+        """Passes on the healthy fixture with all values in range."""
         smoke_check_ranges(_load_fixture())
 
     def test_rejects_negative_precipitation(self):
@@ -167,6 +193,7 @@ class TestSmokeCheckRanges:
             smoke_check_ranges(df)
 
     def test_rejects_negative_runoff(self):
+        """Rejects negative runoff (below the lower bound)."""
         df = _load_fixture()
         df.loc[0, "runoff"] = -5.0
         with pytest.raises(ValueError, match="runoff.*below"):
@@ -193,12 +220,14 @@ class TestSmokeCheckRanges:
             smoke_check_ranges(df)
 
     def test_rejects_implausibly_large_negative_nbs(self):
+        """Rejects an implausibly large negative NBS (below the lower bound)."""
         df = _load_fixture()
         df.loc[0, "nbs"] = -2000.0
         with pytest.raises(ValueError, match="nbs.*below"):
             smoke_check_ranges(df)
 
     def test_rejects_implausibly_large_positive_nbs(self):
+        """Rejects an implausibly large positive NBS (above the upper bound)."""
         df = _load_fixture()
         df.loc[0, "nbs"] = 5000.0
         with pytest.raises(ValueError, match="nbs.*above"):
@@ -227,21 +256,27 @@ class TestSmokeCheckRanges:
 # smoke_check_forecast composes the others
 # ===========================================================================
 class TestSmokeCheckForecast:
+    """The composite smoke_check_forecast surfaces each sub-check's failure."""
+
     def test_passes_on_fixture(self):
+        """Passes on the healthy fixture."""
         smoke_check_forecast(_load_fixture())
 
     def test_fails_on_schema_break(self):
+        """Fails (schema error) when a required column is dropped."""
         df = _load_fixture().drop(columns=["nbs"])
         with pytest.raises(ValueError, match="missing required columns"):
             smoke_check_forecast(df)
 
     def test_fails_on_nan(self):
+        """Fails (NaN error) when a value is NaN."""
         df = _load_fixture()
         df.loc[0, "precipitation"] = np.nan
         with pytest.raises(ValueError, match="NaN"):
             smoke_check_forecast(df)
 
     def test_fails_on_range_break(self):
+        """Fails (range error) when a value is out of range."""
         df = _load_fixture()
         df.loc[0, "precipitation"] = -10.0
         with pytest.raises(ValueError, match="below"):
@@ -252,11 +287,15 @@ class TestSmokeCheckForecast:
 # Defaults are sane (regression guard against accidental edits to constants)
 # ===========================================================================
 class TestModuleConstants:
+    """Regression guards on the module-level constant definitions."""
+
     def test_expected_components_match_required_columns(self):
+        """Every expected component appears in REQUIRED_COLUMNS."""
         for component in EXPECTED_COMPONENTS:
             assert component in REQUIRED_COLUMNS
 
     def test_every_component_has_a_range(self):
+        """Every expected component has a non-inverted range in COMPONENT_RANGES_MM."""
         for component in EXPECTED_COMPONENTS:
             assert component in COMPONENT_RANGES_MM
             low, high = COMPONENT_RANGES_MM[component]
@@ -267,4 +306,5 @@ class TestModuleConstants:
         assert COMPONENT_RANGES_MM["precipitation"][0] >= 0
 
     def test_runoff_lower_bound_is_non_negative(self):
+        """Runoff's lower bound is non-negative."""
         assert COMPONENT_RANGES_MM["runoff"][0] >= 0

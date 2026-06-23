@@ -22,13 +22,17 @@ from src.data_processor import CFSTransformer, ForecastTransformer
 # Constructor validation (both transformers)
 # ===========================================================================
 class TestConstructorValidation:
+    """Both transformers reject non-DataFrame constructor inputs."""
+
     @pytest.mark.parametrize("bad_input", [None, 42, "not a df", [1, 2, 3]])
     def test_cfs_transformer_rejects_non_dataframe(self, bad_input):
+        """CFSTransformer raises ValueError when not given a DataFrame."""
         with pytest.raises(ValueError, match="must be a pandas DataFrame"):
             CFSTransformer(bad_input)
 
     @pytest.mark.parametrize("bad_input", [None, 42, "not a df", [1, 2, 3]])
     def test_forecast_transformer_rejects_non_dataframe(self, bad_input):
+        """ForecastTransformer raises ValueError when not given a DataFrame."""
         with pytest.raises(ValueError, match="must be a pandas DataFrame"):
             ForecastTransformer(bad_input)
 
@@ -44,9 +48,11 @@ class TestCFSTransformerFilter:
 
     @staticmethod
     def _build(cfs_runs):
+        """Build a DataFrame with the given cfs_run values and a running value column."""
         return pd.DataFrame({"cfs_run": cfs_runs, "value": range(len(cfs_runs))})
 
     def test_filters_out_runs_before_window(self):
+        """Drops cfs_runs older than first_forecast_month minus months_back."""
         df = self._build([
             "2024010100",  # before window — drop
             "2024020100",  # within — keep
@@ -62,6 +68,7 @@ class TestCFSTransformerFilter:
         assert "2024010100" not in result["cfs_run"].astype(str).values
 
     def test_default_months_back_is_10(self):
+        """The default months_back window keeps only runs within the look-back."""
         df = self._build(["2023060100", "2024030100", "2024120100"])
         # Default months_back=10, first_fc=2024-12 -> start = 2024-03-01.
         result = CFSTransformer(df).filter(datetime(2024, 12, 1))
@@ -80,6 +87,7 @@ class TestCFSTransformerShift:
     """
 
     def test_lag_zero_lead_zero_only_renames_columns(self):
+        """lag=0, lead=0 renames columns to _mo0 without adding or dropping rows."""
         df = pd.DataFrame({"a": [1.0, 2.0, 3.0], "b": [10.0, 20.0, 30.0]})
         out = CFSTransformer(df).shift_variables(lag=0, lead=0)
         assert list(out.columns) == ["a_mo0", "b_mo0"]
@@ -95,6 +103,7 @@ class TestCFSTransformerShift:
         assert len(out) == 3
 
     def test_dropna_removes_rows_with_shift_induced_nan(self):
+        """Rows left NaN by lag/lead shifting are dropped from the output."""
         df = pd.DataFrame({"a": [1.0, 2.0, 3.0, 4.0, 5.0]})
         out = CFSTransformer(df).shift_variables(lag=3, lead=3)
         # Lags up to mo-2 and leads up to mo2 → first 2 and last 2 rows have NaN → dropped.
@@ -119,6 +128,7 @@ class TestCFSTransformerStructureInput:
     COMPONENTS = ["precipitation", "evaporation", "air_temperature"]
 
     def _build_long_input(self, cfs_run="2024010100"):
+        """Build a long-format input covering all lakes, surfaces, components, and 11 months."""
         cfs_dt = pd.to_datetime(cfs_run, format="%Y%m%d%H")
 
         rows = []
@@ -143,12 +153,14 @@ class TestCFSTransformerStructureInput:
     # -----------------------------
 
     def test_returns_dataframe_with_expected_total_columns(self):
+        """Produces 240 feature columns (4 lakes × 2 surfaces × 3 components × 10 months)."""
         df = self._build_long_input()
         result = CFSTransformer(df).structure_input()
 
         assert result.shape[1] == 240 # 4 lakes × 2 surfaces × 3 components × 10 months
 
     def test_feature_columns_in_nested_lake_surface_component_month_order(self):
+        """Feature columns follow the nested lake/surface/component/month order."""
         df = self._build_long_input()
         result = CFSTransformer(df).structure_input()
 
@@ -165,12 +177,14 @@ class TestCFSTransformerStructureInput:
         assert feature_cols == expected
 
     def test_no_mo10_columns_in_output(self):
+        """The 11th forecast month (mo10) is excluded from the output columns."""
         df = self._build_long_input()
         result = CFSTransformer(df).structure_input()
 
         assert not any(c.endswith("_mo10") for c in result.columns)
 
     def test_accepts_value_mm_column_alias(self):
+        """Accepts a 'value [mm]' column as an alias for 'value'."""
         df = self._build_long_input().rename(columns={"value": "value [mm]"})
         result = CFSTransformer(df).structure_input()
 
@@ -182,8 +196,10 @@ import pytest
 
 
 class TestAddTimeFeatures:
+    """Tests ``CFSTransformer.add_time_features`` cycle/trend columns and overwrite."""
 
     def _build_df(self):
+        """Build a 4-month DataFrame with a monthly DatetimeIndex."""
         idx = pd.date_range("2024-01-01", periods=4, freq="MS")
         return pd.DataFrame({"value": [1, 2, 3, 4]}, index=idx)
 
@@ -191,6 +207,7 @@ class TestAddTimeFeatures:
     # Raises error if index is not DatetimeIndex
     # ---------------------------------------------------------
     def test_requires_datetime_index(self):
+        """Raises TypeError when the index is not a DatetimeIndex."""
         df = pd.DataFrame({"value": [1, 2, 3]})
 
         with pytest.raises(TypeError, match="DatetimeIndex"):
@@ -200,6 +217,7 @@ class TestAddTimeFeatures:
     # Adds month_sin and month_cos correctly
     # ---------------------------------------------------------
     def test_month_cycle_features(self):
+        """Adds month_sin and month_cos matching the sinusoidal month encoding."""
         df = self._build_df()
 
         result = CFSTransformer(df).add_time_features(
@@ -220,6 +238,7 @@ class TestAddTimeFeatures:
     # Time normalization centers data
     # ---------------------------------------------------------
     def test_time_trend_normalized(self):
+        """Normalized time trend has zero mean and unit standard deviation."""
         df = self._build_df()
 
         result = CFSTransformer(df).add_time_features(
@@ -239,6 +258,7 @@ class TestAddTimeFeatures:
     # Overwrite removes old columns
     # ---------------------------------------------------------
     def test_overwrite_behavior(self):
+        """overwrite=True replaces a pre-existing month_sin column."""
         df = self._build_df()
         df["month_sin"] = 999  # fake old value
 
@@ -258,6 +278,7 @@ class TestForecastTransformerMelt:
     """
 
     def _build_wide_input(self):
+        """Build a single-row wide input with precipitation and evaporation across months."""
         return pd.DataFrame([{
             "cfs_run": "2024010100",
             "model": "GP",
@@ -270,6 +291,7 @@ class TestForecastTransformerMelt:
         }])
 
     def test_id_vars_come_first(self):
+        """The id vars (cfs_run, model, lake, component) are the leading columns."""
         df = self._build_wide_input()
         out = ForecastTransformer(df).melt()
         assert list(out.columns[:4]) == ["cfs_run", "model", "lake", "component"]
@@ -314,6 +336,7 @@ class TestForecastTransformerPivot:
     """
 
     def _build_input(self):
+        """Build a single-row wide input with two months of precipitation and evaporation."""
         return pd.DataFrame([{
             "cfs_run": "2024010100",
             "model": "GP",
@@ -324,6 +347,7 @@ class TestForecastTransformerPivot:
         }])
 
     def test_id_columns_come_first_then_variables(self):
+        """The id columns (cfs_run, forecast_month, model, lake) lead, then variables follow."""
         df = self._build_input()
         out = ForecastTransformer(df).pivot()
         assert list(out.columns[:4]) == ["cfs_run", "forecast_month", "model", "lake"]
@@ -340,6 +364,7 @@ class TestForecastTransformerPivot:
         assert var_cols == ["precipitation", "evaporation"]
 
     def test_cfs_run_string_format_preserved(self):
+        """cfs_run round-trips back to its original %Y%m%d%H string."""
         df = self._build_input()
         out = ForecastTransformer(df).pivot()
         # cfs_run is round-tripped to "%Y%m%d%H" string.

@@ -1,3 +1,14 @@
+"""SQLite storage for processed CFS forecast data.
+
+Wraps a single SQLite database/table behind :class:`CFSDatabase`, providing
+schema creation, row- and DataFrame-level inserts, point lookups, and helpers
+for figuring out which forecast run to download next. The schema keys each
+value by ``(cfs_run, year, month, lake, surface_type, component)``.
+
+The forecast notebooks use this module to persist processed CFS output and to
+resume incremental downloads where the previous run left off.
+"""
+
 import sqlite3
 import os
 import pandas as pd
@@ -8,6 +19,22 @@ from datetime import datetime, timedelta, timezone
 from dateutil.relativedelta import relativedelta
 
 class CFSDatabase:
+    """Manage a SQLite database of processed CFS forecast values.
+
+    Each instance is bound to one database file and one table. The table
+    stores one value per ``(cfs_run, year, month, lake, surface_type,
+    component)`` key. Methods cover schema creation, inserting individual
+    records or whole DataFrames, point lookups, and determining the next CFS
+    run to download.
+
+    Parameters
+    ----------
+    database : str
+        Path to the SQLite database file (created if it does not exist).
+    table : str
+        Name of the table to read from and write to.
+    """
+
     def __init__(self, database, table):
         """
         Initialize database connection and ensure table exists.
@@ -42,6 +69,14 @@ class CFSDatabase:
             ''')
 
     def load(self):
+        """
+        Load the entire table into a DataFrame.
+
+        Returns
+        -------
+        pandas.DataFrame
+            All rows of the configured table.
+        """
         # Create a connection to the SQLite database
         conn = sqlite3.connect(self.database)
 
@@ -57,6 +92,33 @@ class CFSDatabase:
         return data
 
     def pull(self, cfs_run, year, month, lake, surface_type, component):
+        """
+        Look up a single stored value by its full primary key.
+
+        Detects whether the table uses a ``value`` or ``value [mm]`` column and
+        queries accordingly.
+
+        Parameters
+        ----------
+        cfs_run : str
+            CFS run identifier (YYYYMMDDHH).
+        year : int
+            Forecast year.
+        month : int
+            Forecast month (1-12).
+        lake : str
+            Lake name.
+        surface_type : str
+            Surface type ('lake' or 'land').
+        component : str
+            NBS component ('precipitation', 'evaporation', 'runoff', 'nbs').
+
+        Returns
+        -------
+        float or None
+            The stored value, or None if no matching row exists or a database
+            error occurs.
+        """
         try:
             conn = sqlite3.connect(self.database)
             cursor = conn.cursor()
@@ -178,11 +240,15 @@ class CFSDatabase:
         """
         Add an entire pandas DataFrame to the database table.
 
-        Parameters:
-        df (pd.DataFrame): The DataFrame to insert. Must contain the columns:
-                           ['cfs_run', 'year', 'month', 'lake', 'surface_type', 'component', 'value']
-        if_exists (str): How to behave if the table already exists.
-                         Options: 'fail', 'replace', 'append' (default).
+        Parameters
+        ----------
+        df : pandas.DataFrame
+            The DataFrame to insert. Must contain the columns
+            ``['cfs_run', 'forecast_month', 'model', 'lake', 'precipitation',
+            'evaporation', 'runoff', 'nbs']``.
+        if_exists : str, default "append"
+            How to behave if the table already exists. One of ``'fail'``,
+            ``'replace'``, or ``'append'``.
         """
 
         required_cols = ['cfs_run', 'forecast_month', 'model', 'lake', 'precipitation', 'evaporation', 'runoff', 'nbs']
@@ -201,6 +267,20 @@ class CFSDatabase:
             raise sqlite3.DatabaseError(f"Database error occurred while inserting DataFrame: {e}")
         
     def get_next_run(self):
+        """
+        Determine the next CFS run date to download.
+
+        Reads the most recent ``cfs_run`` in the table and returns the date
+        from which downloading should resume: the same date at midnight if the
+        last run was the 00/06/12 cycle, or the following day if it was the 18
+        cycle. If the table is missing or empty, falls back to the first of the
+        month nine months ago.
+
+        Returns
+        -------
+        datetime.datetime
+            The next run date, with the time component zeroed.
+        """
         try:
             conn = sqlite3.connect(self.database)
             cursor = conn.cursor()
@@ -301,6 +381,12 @@ class CFSDatabase:
         return start_date, end_date, date_array
 
     def print_columns(self):
+        """
+        Print the name and declared type of each column in the table.
+
+        Intended as an interactive/debugging helper; prints a message if the
+        table does not exist or has no columns.
+        """
         try:
             conn = sqlite3.connect(self.database)
             cursor = conn.cursor()

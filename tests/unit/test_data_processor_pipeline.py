@@ -87,10 +87,12 @@ class TestProcessFilesValidation:
     """
 
     def _make_processor(self, monkeypatch):
+        """Build a CFSProcessor with its database constructor mocked out."""
         monkeypatch.setattr("src.data_processor.CFSDatabase", lambda *a, **k: MagicMock())
         return CFSProcessor(database="fake.db", table="cfs")
 
     def test_missing_download_dir_raises(self, tmp_path, monkeypatch):
+        """Raises ValueError when the download directory doesn't exist."""
         proc = self._make_processor(monkeypatch)
         with pytest.raises(ValueError, match="directory does not exist"):
             proc.process_files(
@@ -100,11 +102,13 @@ class TestProcessFilesValidation:
             )
 
     def test_missing_mask_file_raises(self, tmp_path, monkeypatch):
+        """Raises ValueError when the mask file doesn't exist."""
         proc = self._make_processor(monkeypatch)
         with pytest.raises(ValueError, match="mask_file not found"):
             proc.process_files(str(tmp_path), str(tmp_path / "missing.nc"), ["sup_lake"])
 
     def test_non_list_mask_variables_raises(self, tmp_path, monkeypatch):
+        """Raises ValueError when mask_variables is not a list."""
         proc = self._make_processor(monkeypatch)
         # Create a real file so the mask_file check passes
         mask_path = tmp_path / "mask.nc"
@@ -129,6 +133,7 @@ class TestPrecipitationMaskingMath:
     """
 
     def test_pgbf_january_writes_expected_row(self, tmp_path, monkeypatch):
+        """A January pgbf file writes one DB row with the expected metadata and pcp_mm value."""
         # --- fakes ---
         fake_mask_ds = _build_fake_mask_dataset()
         pcp_value = 0.001
