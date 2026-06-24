@@ -3,4 +3,5 @@
 testpaths = ["tests"]
 markers = [
     "network: test reaches live external endpoints (NOAA AWS / NCEI). Excluded from the default CI run; exercised on a schedule instead. Run locally with `pytest -m network`.",
+    "integration: test hits live external services (network, S3, etc.); skip with `pytest -m 'not integration'`.",
 ]

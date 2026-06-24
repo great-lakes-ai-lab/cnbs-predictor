@@ -1777,8 +1777,8 @@ class CEPCalculator:
             df_cep.to_csv(output_file, sep=sep, index=False)
 
         return df_cep
-    
-@staticmethod
+
+
 def calculate_acc_variables(
     df,
     accumulation_periods=(3, 6),

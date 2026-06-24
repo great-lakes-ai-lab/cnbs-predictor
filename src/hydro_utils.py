@@ -3,7 +3,7 @@
 Small, mostly stateless functions used throughout data processing and
 forecasting:
 
-- time helpers (:func:`seconds_in_month`, :func:`get_first_forecast_month`)
+- time helpers (:func:`seconds_in_month`)
 - grid geometry (:func:`calculate_grid_cell_areas`)
 - physical conversions (:func:`calculate_evaporation_rate`,
   :func:`convert_mm_to_cms`)
@@ -16,8 +16,6 @@ import calendar
 import numpy as np
 import pandas as pd
 import joblib
-from datetime import datetime
-from dateutil.relativedelta import relativedelta
 
 
 def seconds_in_month(year, month):
@@ -200,66 +198,3 @@ def load_model(model_name: str, models_info: list):
         raise ValueError(f"Model '{model_name}' not found in models_info")
 
     return joblib.load(path)
-
-def get_first_forecast_month(date=None):
-    """
-    Determine the minimum forecast month.
-
-    If the day of the month is >= 26, use the next month;
-    otherwise, use the current month.
-
-    Parameters
-    ----------
-    date : str or datetime, optional
-        Input date used for determining the forecast month.
-        If None, today's date is used.
-
-        Accepted string formats:
-            - 'YYYY-MM-DD'
-            - 'YYYYMMDD'
-            - 'YYYY-MM'
-
-    Returns
-    -------
-    str
-        First forecast month in 'YYYY-MM' format.
-    """
-
-    # Use today's date if none provided
-    if date is None:
-        date = datetime.today()
-
-    # Convert string input to datetime
-    elif isinstance(date, str):
-
-        try:
-            if len(date) == 7:
-                date = datetime.strptime(date, "%Y-%m")
-            elif "-" in date:
-                date = datetime.strptime(date, "%Y-%m-%d")
-            else:
-                date = datetime.strptime(date, "%Y%m%d")
-
-        except ValueError:
-            raise ValueError(
-                "Date format not recognized. "
-                "Use 'YYYY-MM-DD', 'YYYYMMDD', or 'YYYY-MM'."
-            )
-
-    # Ensure datetime-like object
-    elif not isinstance(date, datetime):
-        raise TypeError(
-            "Date must be None, a string, or a datetime object."
-        )
-
-    # Determine forecast month
-    if date.day >= 26:
-        first_forecast_month = (
-            date + relativedelta(months=1)
-        ).strftime("%Y-%m")
-    else:
-        first_forecast_month = date.strftime("%Y-%m")
-
-    print(f"First forecast month: {first_forecast_month}")
-
-    return first_forecast_month

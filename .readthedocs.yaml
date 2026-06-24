@@ -14,9 +14,9 @@ build:
 
 sphinx:
   configuration: docs/sphinx/conf.py
-  # Fail the build on warnings once the docs are stable. Left off initially
-  # because sparse docstrings can produce non-fatal warnings.
-  fail_on_warning: false
+  # Docs now build cleanly (zero Sphinx warnings), so warnings are treated as
+  # errors to keep the documentation healthy as the code evolves.
+  fail_on_warning: true
 
 python:
   install:
