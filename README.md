@@ -150,7 +150,7 @@ cnbs-predictor/
     ├── fixtures                                # Test fixture data
     ├── integration                             # Integration tests across multiple components
     └── unit                                    # Unit tests for individual functions
-    ```
+```
 
 ## Contributing
 We welcome contributions to cnbs-predictor! Please start a discussion with the maintainers first (@lefitzpatrick, @danijonesocean), preferably in the GitHub Discussions or Issues sections of this repository. Once you have discussed possible changes with the developers:
