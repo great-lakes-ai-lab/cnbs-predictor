@@ -49,8 +49,10 @@ On a **Mac**, begin by opening a **Terminal** window.
 On a **Windows** computer, you will need to open the **Anaconda Prompt**.  
 - If you don’t already have Anaconda or Miniconda installed, download and install it from: https://www.anaconda.com/download  
 
-1. **Clone the Repository:** Clone the repository to your target machine.
-
+1. **Clone the Repository:** Decide where you want the tool to live on your local machine and clone the repository. In this example, we will add it directly to the Desktop.
+    ```bash
+    cd Desktop
+    ```
     ```bash
     git clone https://github.com/great-lakes-ai-lab/cnbs-predictor.git
     ```
