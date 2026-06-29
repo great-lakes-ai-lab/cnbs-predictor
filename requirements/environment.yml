@@ -10,6 +10,7 @@ dependencies:
   - beautifulsoup4
   - boto3
   - botocore
+  - cartopy
   - cfgrib==0.9.15.0
   - pandas
   - numpy
