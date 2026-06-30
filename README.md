@@ -28,11 +28,11 @@ Forecast monthly **precipitation (P), evaporation (E), runoff (R), and net basin
 
 | Abbreviation | Name                                           | Source         | Data Use        |
 |--------------|------------------------------------------------|----------------|----------------|
-| CFSR         | Climate Forecast System Reanalysis             | NOAA           | Training       |
-| CFS          | Climate Forecast System v2                     | NOAA           | Forecasting    |
-| GLSEA        | Great Lakes Surface Environmental Analysis     | NOAA GLERL     | Forecasting |
-| L2SWBM       | Large Lake Statistical Water Balance Model     | NOAA GLERL     | Training    |
-| GLCC         | Great Lakes Coordinating Committee             | USACE / ECCC   | Training |
+| CFSR         | Climate Forecast System Reanalysis             | [NOAA](https://www.ncei.noaa.gov/access/metadata/landing-page/bin/iso?id=gov.noaa.ncdc:C00766)           | Training       |
+| CFS          | Climate Forecast System v2                     | [NOAA](https://www.ncei.noaa.gov/access/metadata/landing-page/bin/iso?id=gov.noaa.ncdc:C00877)           | Forecasting    |
+| GLSEA        | Great Lakes Surface Environmental Analysis     | [NOAA GLERL](https://coastwatch.glerl.noaa.gov/satellite-data-products/great-lakes-surface-environmental-analysis-glsea/)     | Forecasting |
+| L2SWBM       | Large Lake Statistical Water Balance Model     | [GLCC](https://zenodo.org/records/13883098)     | Training    |
+| RNBS         | Residual Net Basin Supply             | [GLCC](https://www.greatlakescc.org/en/coordinating-committee-products-and-datasets/)   | Training |
 
 
 ## Getting Started
@@ -90,7 +90,7 @@ jupyter lab
 2. On the left, navigate to the notebooks/production/ directory.
 3. First time users who do not have the trained model files (e.g. data/input/models/GP_trained_model_anom.joblib) will need to first run `0_LEF_model_training_anomalies.ipynb`. This script will create and train the scalers, models, and attributes and save them to the appropriate folders. If you already have the required files, skip to step 8.
 4. Set your local directory paths in the **User Input** section.
-5. Double check the kernel in the top right shows `Python (nbs_env)`. If it does not, click on it to switch kernels. You can also mark "Always start the preferred kernel" to force it to always start with the nbs_env environment.
+5. Double check the kernel in the top right shows something similar to `Python 3 (ipykernel)` or `Python (nbs_env)`. If it does not, click on it to switch kernels.
 6. Run the notebook by clicking on the ▶▶ symbol to run all cells or the ▶ to run one cell at a time.
 7. You should now have joblib files under models, scalers, and csv/json files under climatology.
 8. Open `1_LEF_download_preprocess.ipynb`. Set your local directory paths in the **User Input** section.
