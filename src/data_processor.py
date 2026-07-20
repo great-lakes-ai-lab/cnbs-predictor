@@ -174,73 +174,8 @@ class CFSProcessor:
             # Number of days in the forecast month, used to convert monthly totals.
             _, num_days = calendar.monthrange(forecast_year, forecast_month)
 
-            # =====================================================
-            # Precipitation
-            # =====================================================
-            # pgbf files contain precipitation fields.
-            if filename.startswith("pgbf") and filename.endswith(".grib.grb2"):
-                try:
-                    # Open surface-level fields from the pgbf file.
-                    pgb_surface = cfgrib.open_dataset(
-                        file,
-                        engine="cfgrib",
-                        filter_by_keys={"typeOfLevel": "surface"},
-                        decode_timedelta=False,
-                    )
-
-                    pcp = pgb_surface["tp"]
-
-                    # Cut the precipitation field to the mask extent.
-                    pcp_cut = pcp.sel(
-                        latitude=slice(mask_lat.max(), mask_lat.min()),
-                        longitude=slice(mask_lon.min(), mask_lon.max()),
-                    )
-
-                    # Remap precipitation to the mask grid.
-                    pcp_remap = pcp_cut.interp(
-                        latitude=mask_lat,
-                        longitude=mask_lon,
-                        method="linear",
-                    )
-
-                    for mask_var in mask_variables:
-                        mask = mask_ds.variables[mask_var][:]
-
-                        # Calculate area-weighted mean precipitation.
-                        # The factor of 4 and number of days convert the CFS value
-                        # to an estimated monthly total.
-                        total_pcp = np.sum(pcp_remap * mask * area) * 4 * num_days
-                        pcp_mm = total_pcp / np.sum(mask * area)
-
-                        lake_abv, surface_type = mask_var.split("_")
-                        lake = lake_lookup.get(lake_abv)
-
-                        if lake is None:
-                            raise ValueError(
-                                "ERROR: The mask variables need to begin with "
-                                "'eri', 'ont', 'sup', or 'mih'. Check the mask file."
-                            )
-
-                        # Insert precipitation into the database.
-                        self.db.add(
-                            cfs_run,
-                            forecast_year,
-                            forecast_month,
-                            lake,
-                            surface_type,
-                            "precipitation",
-                            pcp_mm.item(),
-                        )
-
-                except Exception as e:
-                    print(f"ERROR processing precipitation data: {e}. Skipping forecast.")
-                    continue
-
-            # =====================================================
-            # 2-meter air temperature and evaporation
-            # =====================================================
             # flxf files contain temperature and latent heat flux fields.
-            elif filename.startswith("flxf") and filename.endswith(".grib.grb2"):
+            if filename.startswith("flxf") and filename.endswith(".grib.grb2"):
 
                 # -------------------------
                 # 2-meter air temperature
@@ -350,8 +285,9 @@ class CFSProcessor:
                         mask = mask_ds.variables[mask_var][:]
 
                         # Calculate area-weighted monthly evaporation.
-                        total_evap = np.sum(evap * area * mask) * num_days * 86400
-                        evap_mm = total_evap / np.sum(mask * area)
+                        seconds_in_day = 60 * 60 * 24
+                        total_evap = np.sum(evap * area * mask) * seconds_in_day * num_days
+                        evap_mm = total_evap / np.nansum(mask * area)
 
                         lake_abv, surface_type = mask_var.split("_")
                         lake = lake_lookup.get(lake_abv)
@@ -373,8 +309,53 @@ class CFSProcessor:
                             evap_mm.item(),
                         )
 
+                    # -------------------------
+                    # Precipitation
+                    # -------------------------
+                    pcp = flx_surface["prate"] # Precipitation rate in kg/m^2/s
+
+                    # Cut the precipitation field to the mask extent.
+                    pcp_cut = pcp.sel(
+                        latitude=slice(mask_lat.max(), mask_lat.min()),
+                        longitude=slice(mask_lon.min(), mask_lon.max()),
+                    )
+
+                    # Remap precipitation to the mask grid.
+                    pcp_remap = pcp_cut.interp(
+                        latitude=mask_lat,
+                        longitude=mask_lon,
+                        method="linear",
+                    )
+
+                    for mask_var in mask_variables:
+                        mask = mask_ds.variables[mask_var][:]
+
+                        # Calculate area-weighted total precipitation from precipitation rate.
+                        total_pcp = np.sum(pcp_remap * mask * area) * seconds_in_day * num_days
+                        pcp_mm = total_pcp / np.nansum(mask * area)
+
+                        lake_abv, surface_type = mask_var.split("_")
+                        lake = lake_lookup.get(lake_abv)
+
+                        if lake is None:
+                            raise ValueError(
+                                "ERROR: The mask variables need to begin with "
+                                "'eri', 'ont', 'sup', or 'mih'. Check the mask file."
+                            )
+
+                        # Insert precipitation into the database.
+                        self.db.add(
+                            cfs_run,
+                            forecast_year,
+                            forecast_month,
+                            lake,
+                            surface_type,
+                            "precipitation",
+                            pcp_mm.item(),
+                        )
+
                 except Exception as e:
-                    print(f"ERROR processing evaporation data: {e}. Skipping forecast.")
+                    print(f"ERROR processing evaporation and/or precipitation data: {e}. Skipping forecast.")
                     continue
 
             # -------------------------
