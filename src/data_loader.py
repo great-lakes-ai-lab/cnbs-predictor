@@ -40,59 +40,147 @@ class DataLoader:
         """Initialize the DataLoader. No configuration is required."""
         pass
 
-    def glcc(self, directory, units='cms'):
+    def glcc(self, directory, data_type='nbs', units='cms'):
         """
-        Load observed GLCC NBS data for all four lakes in either 'cms' or 'mm' units.
-        """
-        filenames = {
-            'superior': 'LakeSuperior_MonthlyNetBasinSupply_1900to2025.csv',
-            'michigan-huron': 'LakeMichiganHuron_MonthlyNetBasinSupply_1900to2025.csv',
-            'erie': 'LakeErie_MonthlyNetBasinSupply_1900to2025.csv',
-            'ontario': 'LakeOntario_MonthlyNetBasinSupply_1900to2025.csv',
-        }
+        Load observed GLCC data for all four lakes.
 
-        def format_data(df):
-            df_long = df.melt(id_vars=['Year'], var_name='Month', value_name='Observed')
-            df_long['date'] = pd.to_datetime(
-                df_long['Year'].astype(str) + '-' + df_long['Month'].str[1:4] + '-01',
-                format='%Y-%b-%d'
-            )
-            return df_long[['date', 'Observed']].sort_values('date').reset_index(drop=True)
+        Parameters
+        ----------
+        directory : str
+            Directory containing the GLCC CSV files.
+        data_type : {'nbs', 'water_level'}
+            Type of data to load.
+        units : str
+            For NBS:
+                'cms' (default) or 'mm'
+            For water_level:
+                'm' (default)
+        """
+
+        if data_type.lower() == 'nbs':
+            filenames = {
+                'superior': 'LakeSuperior_MonthlyNetBasinSupply_1900to2025.csv',
+                'michigan-huron': 'LakeMichiganHuron_MonthlyNetBasinSupply_1900to2025.csv',
+                'erie': 'LakeErie_MonthlyNetBasinSupply_1900to2025.csv',
+                'ontario': 'LakeOntario_MonthlyNetBasinSupply_1900to2025.csv',
+            }
+
+            def format_data(df):
+                df_long = df.melt(
+                    id_vars=['Year'],
+                    var_name='Month',
+                    value_name='Observed'
+                )
+
+                df_long['date'] = pd.to_datetime(
+                    df_long['Year'].astype(str) + '-' +
+                    df_long['Month'].str[1:4] + '-01',
+                    format='%Y-%b-%d'
+                )
+
+                return (
+                    df_long[['date', 'Observed']]
+                    .sort_values('date')
+                    .reset_index(drop=True)
+                )
+
+        elif data_type.lower() == 'water_level':
+
+            filenames = {
+                'superior': 'Monthly_mean_water_levels_Lake_Superior_1918-2024.csv',
+                'michigan-huron': 'Monthly_mean_water_levels_Lake_Michigan-Huron_1918-2024.csv',
+                'erie': 'Monthly_mean_water_levels_Lake_Erie_1918-2024.csv',
+                'ontario': 'Monthly_mean_water_levels_Lake_Ontario_1918-2024.csv',
+            }
+
+            def format_data(df):
+
+                # Remove metadata rows beginning with '#'
+                df = df[~df.iloc[:, 0].astype(str).str.startswith('#')]
+
+                # Read only the columns we need
+                df = df[['time', 'monthly_lakewide_average_water_level']].copy()
+
+                df.rename(
+                    columns={
+                        'time': 'date',
+                        'monthly_lakewide_average_water_level': 'Observed'
+                    },
+                    inplace=True
+                )
+
+                df['date'] = pd.to_datetime(df['date'])
+                df['Observed'] = pd.to_numeric(df['Observed'], errors='coerce')
+
+                return (
+                    df[['date', 'Observed']]
+                    .sort_values('date')
+                    .reset_index(drop=True)
+                )
+
+        else:
+            raise ValueError("data_type must be either 'nbs' or 'water_level'.")
 
         dfs = []
+
         for lake, filename in filenames.items():
+
             path = os.path.join(directory, filename)
-            df = pd.read_csv(path, skiprows=11)
-            formatted = format_data(df).rename(columns={'Observed': f'{lake}_nbs_obs'})
+
+            if data_type.lower() == 'nbs':
+                df = pd.read_csv(path, skiprows=11)
+                col_name = f'{lake}_nbs_obs'
+
+            else:
+                df = pd.read_csv(path, comment='#')
+                col_name = f'{lake}_water_level_obs'
+
+            formatted = format_data(df).rename(
+                columns={'Observed': col_name}
+            )
+
             dfs.append(formatted)
 
-        # Merge all dataframes on 'date'
+        # Merge all lakes
         df_merged = dfs[0]
         for df in dfs[1:]:
             df_merged = pd.merge(df_merged, df, on='date', how='outer')
 
         df_merged.replace(-99990.0, np.nan, inplace=True)
 
-        lake_cols = [col for col in df_merged.columns if col.endswith('_nbs_obs')]
-        df_merged.dropna(subset=lake_cols, how='all', inplace=True)
+        if data_type.lower() == 'nbs':
 
-        if units == 'mm':
+            lake_cols = [c for c in df_merged.columns if c.endswith('_nbs_obs')]
+            df_merged.dropna(subset=lake_cols, how='all', inplace=True)
 
-            df_merged['seconds_in_month'] = df_merged['date'].apply(
-                lambda x: calendar.monthrange(x.year, x.month)[1] * 24 * 60 * 60
-            )
+            if units == 'mm':
 
-            for col in lake_cols:
-                lake = col.replace('_nbs_obs', '')
-                area = lake_areas.get(lake)
-                if area:
-                    df_merged[col] = (
-                        df_merged[col] * df_merged['seconds_in_month'] / area * 1000
-                    )
+                df_merged['seconds_in_month'] = df_merged['date'].apply(
+                    lambda x: calendar.monthrange(x.year, x.month)[1]
+                    * 24 * 60 * 60
+                )
 
-            df_merged.drop(columns='seconds_in_month', inplace=True)
+                for col in lake_cols:
+                    lake = col.replace('_nbs_obs', '')
+                    area = lake_areas.get(lake)
+
+                    if area is not None:
+                        df_merged[col] = (
+                            df_merged[col]
+                            * df_merged['seconds_in_month']
+                            / area
+                            * 1000
+                        )
+
+                df_merged.drop(columns='seconds_in_month', inplace=True)
+
+        else:
+            # Water levels are always metres
+            if units not in ('m', None):
+                raise ValueError("Water level data are only available in metres (units='m').")
 
         df_merged.set_index('date', inplace=True)
+
         return df_merged
 
     def l2swbm(self, directory):
