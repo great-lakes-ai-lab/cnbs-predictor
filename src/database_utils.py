@@ -196,7 +196,7 @@ class CFSDatabase:
             try:
                 # Use context manager for safe connection handling
                 with sqlite3.connect(self.database, timeout=30) as conn:
-                    conn.execute("PRAGMA journal_mode=WAL;")  # allows concurrent reads
+                    #conn.execute("PRAGMA journal_mode=WAL;")  # allows concurrent reads
                     cursor = conn.cursor()
 
                     # Get table columns to find correct value column
