@@ -3,7 +3,7 @@
 Wraps a single SQLite database/table behind :class:`CFSDatabase`, providing
 schema creation, row- and DataFrame-level inserts, point lookups, and helpers
 for figuring out which forecast run to download next. The schema keys each
-value by ``(cfs_run, year, month, lake, surface_type, component)``.
+value by ``(cfs_run, forecast_month, lake, surface_type, component)``.
 
 The forecast notebooks use this module to persist processed CFS output and to
 resume incremental downloads where the previous run left off.
@@ -22,7 +22,7 @@ class CFSDatabase:
     """Manage a SQLite database of processed CFS forecast values.
 
     Each instance is bound to one database file and one table. The table
-    stores one value per ``(cfs_run, year, month, lake, surface_type,
+    stores one value per ``(cfs_run, forecast_month, lake, surface_type,
     component)`` key. Methods cover schema creation, inserting individual
     records or whole DataFrames, point lookups, and determining the next CFS
     run to download.
@@ -58,13 +58,12 @@ class CFSDatabase:
             conn.execute(f'''
                 CREATE TABLE IF NOT EXISTS {self.table} (
                     cfs_run TEXT,
-                    year INTEGER,
-                    month INTEGER,
+                    forecast_month TEXT,
                     lake TEXT,
                     surface_type TEXT,
                     component TEXT,
                     value REAL,
-                    PRIMARY KEY (cfs_run, year, month, lake, surface_type, component)
+                    PRIMARY KEY (cfs_run, forecast_month, lake, surface_type, component)
                 )
             ''')
 
@@ -91,7 +90,7 @@ class CFSDatabase:
 
         return data
 
-    def pull(self, cfs_run, year, month, lake, surface_type, component):
+    def pull(self, cfs_run, forecast_month, lake, surface_type, component):
         """
         Look up a single stored value by its full primary key.
 
@@ -102,10 +101,8 @@ class CFSDatabase:
         ----------
         cfs_run : str
             CFS run identifier (YYYYMMDDHH).
-        year : int
-            Forecast year.
-        month : int
-            Forecast month (1-12).
+        forecast_month : str
+            Forecast month (YYYY-MM).
         lake : str
             Lake name.
         surface_type : str
@@ -138,10 +135,10 @@ class CFSDatabase:
             # --- Build query using detected column name ---
             query = f'''
             SELECT {value_col} FROM {self.table}
-            WHERE cfs_run = ? AND year = ? AND month = ? 
+            WHERE cfs_run = ? AND forecast_month = ? 
                 AND lake = ? AND surface_type = ? AND component = ?
             '''
-            cursor.execute(query, (cfs_run, year, month, lake, surface_type, component))
+            cursor.execute(query, (cfs_run, forecast_month, lake, surface_type, component))
             result = cursor.fetchone()
             conn.close()
 
@@ -158,14 +155,13 @@ class CFSDatabase:
             print(f"Error: {e}")
             return None
 
-    def add(self, cfs_run, year, month, lake, surface_type, component, value):
+    def add(self, cfs_run, forecast_month, lake, surface_type, component, value):
         """
         Safely adds or replaces a record in the database table using SQLite.
 
         Parameters:
             cfs_run (str): The CFS run identifier (YYYYMMDDHH).
-            year (int): Forecast year (e.g., 2024, 2025).
-            month (int): Forecast month (1–12).
+            forecast_month (str): Forecast month (YYYY-MM).
             lake (str): Lake name.
             surface_type (str): Surface type ('lake' or 'land').
             component (str): NBS Component ('precipitation', 'evaporation', 'runoff', 'cnbs').
@@ -180,10 +176,8 @@ class CFSDatabase:
         self.create_cfs_table()
 
         # --- Input validation ---
-        if not isinstance(year, int):
-            raise ValueError("ERROR: Year must be an integer.")
-        if not (1 <= month <= 12):
-            raise ValueError("ERROR: Month must be between 1 and 12.")
+        if not isinstance(forecast_month, str):
+            raise ValueError("ERROR: Forecast month must be a string.")
         if not all(isinstance(v, str) for v in [cfs_run, lake, surface_type, component]):
             raise ValueError("ERROR: cfs_run, lake, surface_type, and component must be strings.")
         if not isinstance(value, (float, int)):
@@ -215,10 +209,10 @@ class CFSDatabase:
                     # Insert or replace record
                     query = f"""
                     INSERT OR REPLACE INTO {self.table} (
-                        cfs_run, year, month, lake, surface_type, component, {value_col}
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                        cfs_run, forecast_month, lake, surface_type, component, {value_col}
+                    ) VALUES (?, ?, ?, ?, ?, ?)
                     """
-                    cursor.execute(query, (cfs_run, year, month, lake, surface_type, component, value))
+                    cursor.execute(query, (cfs_run, forecast_month, lake, surface_type, component, value))
                     conn.commit()
                 return  # ✅ success — exit early
 
@@ -235,36 +229,50 @@ class CFSDatabase:
 
         print(f"Failed to write record after {max_retries} attempts — skipping forecast.")
 
-        
     def add_df(self, df, if_exists="append"):
         """
-        Add an entire pandas DataFrame to the database table.
+        Add a pandas DataFrame to the database table.
 
         Parameters
         ----------
         df : pandas.DataFrame
-            The DataFrame to insert. Must contain the columns
-            ``['cfs_run', 'forecast_month', 'model', 'lake', 'precipitation',
-            'evaporation', 'runoff', 'nbs']``.
-        if_exists : str, default "append"
-            How to behave if the table already exists. One of ``'fail'``,
-            ``'replace'``, or ``'append'``.
+            DataFrame to insert.
+        if_exists : {"append", "replace", "fail"}, default "append"
+            Behavior if the table already exists.
         """
 
-        required_cols = ['cfs_run', 'forecast_month', 'model', 'lake', 'precipitation', 'evaporation', 'runoff', 'nbs']
-        missing_cols = [col for col in required_cols if col not in df.columns]
-        if missing_cols:
-            raise ValueError(f"Missing required columns in DataFrame: {missing_cols}")
-
         try:
-            conn = sqlite3.connect(self.database)
+            with sqlite3.connect(self.database) as conn:
 
-            # Insert DataFrame into the database
-            df.to_sql(self.table, conn, if_exists=if_exists, index=False)
+                # Check if the table already exists
+                table_exists = conn.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+                    (self.table,)
+                ).fetchone() is not None
 
-            conn.close()
+                # If appending to an existing table, verify columns match
+                if table_exists and if_exists == "append":
+                    db_columns = pd.read_sql_query(
+                        f"SELECT * FROM {self.table} LIMIT 0",
+                        conn
+                    ).columns.tolist()
+
+                    df_columns = df.columns.tolist()
+
+                    if db_columns != df_columns:
+                        raise ValueError(
+                            "DataFrame columns do not match database table.\n"
+                            f"Database:  {db_columns}\n"
+                            f"DataFrame: {df_columns}"
+                        )
+
+                # Write DataFrame
+                df.to_sql(self.table, conn, if_exists=if_exists, index=False)
+
         except sqlite3.DatabaseError as e:
-            raise sqlite3.DatabaseError(f"Database error occurred while inserting DataFrame: {e}")
+            raise sqlite3.DatabaseError(
+                f"Database error occurred while inserting DataFrame: {e}"
+            )
         
     def get_next_run(self):
         """

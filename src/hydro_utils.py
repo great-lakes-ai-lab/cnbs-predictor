@@ -128,43 +128,48 @@ def calculate_evaporation_rate(temperature_K, latent_heat_flux):
 
 def convert_mm_to_cms(df):
     """
-    Converts the 'value [mm]' in the dataframe to 'value [cms]' (cubic meters per second) based on lake surface area and the number of seconds in the month.
+    Converts the 'value [mm]' in the dataframe to 'value [cms]' (cubic meters per second)
+    based on lake surface area and the number of seconds in the forecast month.
 
     Parameters
     ----------
-    - df (pd.DataFrame): DataFrame containing the columns 'value [mm]', 'lake', and a multi-index with 'month' and 'year'.
-    
+    - df (pd.DataFrame): DataFrame containing the columns 'value [mm]', 'lake',
+      and 'forecast_month' in YYYY-MM format.
+
     Returns
     ----------
-    - pd.DataFrame: DataFrame with a new column 'value [cms]' representing the value in cubic meters per second.
-
-    Notes:
-    Recognized lake names are 'superior', 'michigan-huron', 'erie', and
-    'ontario'. Any other value in the 'lake' column silently yields a
-    'value [cms]' of 0 (surface area defaults to 0 via ``dict.get``).
-    Sub-optimal: a future revision should raise on unknown lake names
-    rather than masking the issue with zeros.
+    - pd.DataFrame: DataFrame with a new column 'value [cms]'.
     """
 
     # Dictionary storing the surface area (in square meters) for each lake
     lake_sa = {
-        'superior': 82097 * 1000000,       # Lake Superior area in square meters
-        'michigan-huron': (57753 + 59560) * 1000000,  # Lake Michigan-Huron combined area in square meters
-        'erie': 25655 * 1000000,           # Lake Erie area in square meters
-        'ontario': 19009 * 1000000         # Lake Ontario area in square meters
+        'superior': 82097 * 1000000,
+        'michigan-huron': (57753 + 59560) * 1000000,
+        'erie': 25655 * 1000000,
+        'ontario': 19009 * 1000000
     }
-    df_units = df.copy()  # Create a copy of the input DataFrame to avoid modifying the original
 
-    # Apply the conversion formula for each row in the dataframe
-    df_units['value [cms]'] = df_units.apply(
-        lambda row: (
-            # Convert mm to meters, multiply by the lake surface area, and divide by seconds in the given month
-            (row['value [mm]'] / 1000) * lake_sa.get(row['lake'], 0) / 
-            seconds_in_month(row['year'], row['month'])
-        ), axis=1
+    df_units = df.copy()
+
+    # Ensure forecast_month is datetime
+    df_units["forecast_month"] = pd.to_datetime(
+        df_units["forecast_month"]
     )
-    
-    # Return the modified DataFrame with the new 'value [cms]' column
+
+    # Apply conversion formula
+    df_units["value [cms]"] = df_units.apply(
+        lambda row: (
+            (row["value [mm]"] / 1000)
+            * lake_sa.get(row["lake"], 0)
+            / seconds_in_month(
+                row["forecast_month"].year,
+                row["forecast_month"].month
+            )
+        ),
+        axis=1
+    )
+
+    # Return modified dataframe
     return df_units
 
 def load_model(model_name: str, models_info: list):

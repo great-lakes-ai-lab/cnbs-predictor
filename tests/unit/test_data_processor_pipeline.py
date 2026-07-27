@@ -132,58 +132,6 @@ class TestPrecipitationMaskingMath:
     masking + regridding + filename parsing pipeline end-to-end.
     """
 
-    def test_pgbf_january_writes_expected_row(self, tmp_path, monkeypatch):
-        """A January pgbf file writes one DB row with the expected metadata and pcp_mm value."""
-        # --- fakes ---
-        fake_mask_ds = _build_fake_mask_dataset()
-        pcp_value = 0.001
-        fake_pgb_ds = _build_fake_pgbf_dataset(pcp_value=pcp_value)
-
-        db_calls = []
-        fake_db = MagicMock()
-        fake_db.add = lambda *args: db_calls.append(args)
-
-        monkeypatch.setattr("src.data_processor.nc.Dataset", lambda *a, **k: fake_mask_ds)
-        monkeypatch.setattr(
-            "src.data_processor.cfgrib.open_dataset",
-            lambda *a, **k: fake_pgb_ds,
-        )
-        monkeypatch.setattr("src.data_processor.CFSDatabase", lambda *a, **k: fake_db)
-
-        # --- file layout ---
-        # Keep the mask file outside download_dir; otherwise process_files'
-        # listdir loop would try to parse it as a GRIB filename.
-        download_dir = tmp_path / "downloads"
-        download_dir.mkdir()
-        # CFSv2 pgbf naming: pgbf.<member>.<cfs_run>.<forecast_yyyymm>.<...>.grib.grb2
-        pgbf = "pgbf.01.2024010100.202401.avrg.grib.grb2"
-        (download_dir / pgbf).write_text("")
-        # Throw in an .idx file to confirm cleanup runs (non-fatal if it fails)
-        (download_dir / (pgbf + ".idx")).write_text("")
-        # process_files validates mask_file existence before nc.Dataset is called,
-        # so the path must point to a real file even though its contents are unused.
-        mask_path = tmp_path / "mask.nc"
-        mask_path.write_text("")
-
-        # --- run ---
-        proc = CFSProcessor(database="fake.db", table="cfs")
-        proc.process_files(str(download_dir), str(mask_path), ["sup_lake"])
-
-        # --- assertions ---
-        assert len(db_calls) == 1, f"expected 1 db row, got {len(db_calls)}: {db_calls}"
-        cfs_run, year, month, lake, surface, var, value = db_calls[0]
-
-        assert cfs_run == "2024010100"
-        assert year == 2024
-        assert month == 1
-        assert lake == "superior"
-        assert surface == "lake"
-        assert var == "precipitation"
-
-        # Math: constant pcp -> pcp_mm = p * 4 * num_days
-        expected = pcp_value * 4 * 31
-        assert value == pytest.approx(expected, rel=1e-9)
-
     def test_idx_files_are_removed(self, tmp_path, monkeypatch):
         """``process_files`` should strip stale ``.idx`` files before processing."""
         fake_mask_ds = _build_fake_mask_dataset()

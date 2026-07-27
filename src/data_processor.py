@@ -168,11 +168,13 @@ class CFSProcessor:
 
             cfs_run = parts[2]
 
-            forecast_year = int(parts[3][:4])
-            forecast_month = int(parts[3][4:6])
+            valid_year = int(parts[3][:4])
+            valid_month = int(parts[3][4:6])
+
+            forecast_month = f"{valid_year:04d}-{valid_month:02d}"
 
             # Number of days in the forecast month, used to convert monthly totals.
-            _, num_days = calendar.monthrange(forecast_year, forecast_month)
+            _, num_days = calendar.monthrange(valid_year, valid_month)
 
             # flxf files contain temperature and latent heat flux fields.
             if filename.startswith("flxf") and filename.endswith(".grib.grb2"):
@@ -234,7 +236,6 @@ class CFSProcessor:
                         # Insert air temperature into the database.
                         self.db.add(
                             cfs_run,
-                            forecast_year,
                             forecast_month,
                             lake,
                             surface_type,
@@ -301,7 +302,6 @@ class CFSProcessor:
                         # Insert evaporation into the database.
                         self.db.add(
                             cfs_run,
-                            forecast_year,
                             forecast_month,
                             lake,
                             surface_type,
@@ -346,7 +346,6 @@ class CFSProcessor:
                         # Insert precipitation into the database.
                         self.db.add(
                             cfs_run,
-                            forecast_year,
                             forecast_month,
                             lake,
                             surface_type,
@@ -986,27 +985,28 @@ class CFSTransformer:
 
         # Determine operational forecast month
         if date.day < 26:
-            forecast_month = datetime(date.year, date.month, 1)
+            forecast_month = pd.Timestamp(date.year, date.month, 1)
         else:
             forecast_month = (
                 pd.Timestamp(date.year, date.month, 1)
                 + pd.DateOffset(months=1)
             )
 
-        # Go back desired number of months
-        start_date = (
-            pd.Timestamp(forecast_month)
-            - pd.DateOffset(months=months_back)
+        print(
+            f"Beginning from month {forecast_month.strftime('%Y-%m')}"
         )
+        # Go back desired number of months
+        start_date = forecast_month - pd.DateOffset(months=months_back)
 
+        # Convert cfs_run to datetime for filtering only
         cfs_run_dt = pd.to_datetime(
             df["cfs_run"].astype(str),
-            format="%Y%m%d%H"
+            format="%Y%m%d%H",
+            errors="coerce"
         )
 
+        # Filter CFS runs
         df_filtered = df.loc[cfs_run_dt >= start_date].copy()
-
-        print(f"Beginning from month {pd.Timestamp(forecast_month).strftime('%m-%Y')}")
 
         return df_filtered
 
@@ -1063,9 +1063,7 @@ class CFSTransformer:
         )
 
         # --- Build forecast date ---
-        data["forecast_date"] = pd.to_datetime(
-            dict(year=data["year"], month=data["month"], day=1)
-        )
+        data["forecast_date"] = pd.to_datetime(data["forecast_month"] + "-01")
 
         # --- Compute forecast month index ---
         data["forecast_month"] = (
@@ -1494,19 +1492,27 @@ class ForecastTransformer:
         df_melted['month_offset'] = split_cols[2].str.replace('mo', '', regex=False).astype(int)
 
         # Step 3: Compute forecast_month
-        df_melted['forecast_month'] = df_melted.apply(
-            lambda row: (pd.to_datetime(row['cfs_run']) + pd.DateOffset(months=row['month_offset'])).strftime('%Y-%m'),
+        df_melted["forecast_month"] = df_melted.apply(
+            lambda row: (
+                pd.to_datetime(row["cfs_run"]) +
+                pd.DateOffset(months=row["month_offset"])
+            ),
             axis=1
         )
-        df_melted = df_melted.drop(columns=['month_offset'])
+
+        df_melted = df_melted.drop(columns=["month_offset"])
 
         # Step 4: Pivot so each variable type is its own column
         df_tidy = df_melted.pivot_table(
-            index=['cfs_run', 'model', 'forecast_month', 'lake'],
-            columns='variable',
-            values='value'
+            index=["cfs_run", "model", "forecast_month", "lake"],
+            columns="variable",
+            values="value"
         ).reset_index()
+
         df_tidy.columns.name = None
+
+        # Final output formatting
+        df_tidy["forecast_month"] = df_tidy["forecast_month"].dt.strftime("%Y-%m")
 
         # Step 5: Reorder columns if expected vars exist
         expected_vars = ["precipitation", "evaporation", "runoff", "nbs"]
@@ -1532,8 +1538,10 @@ class ForecastTransformer:
 
         if "forecast_month" in df.columns:
             # Convert to Period
-            df["forecast_month"] = pd.to_datetime(df["forecast_month"], format="%Y-%m").dt.to_period("M")
-
+            df["forecast_month"] = (
+                pd.to_datetime(df["forecast_month"])
+                .dt.to_period("M")
+)
             # Find the first forecast month >= threshold
             first_month_in_data = df["forecast_month"].min()
             first_month_to_keep = max(first_month_in_data, min_period)
@@ -1693,6 +1701,7 @@ class CEPCalculator:
         self,
         df,
         date_col="forecast_month",
+        value_col="value [mm]",
         component="nbs",
         output_file=None,
         sep=","
@@ -1705,13 +1714,17 @@ class CEPCalculator:
         ----------
         df : pandas.DataFrame
             Input forecast dataframe containing:
-                - date_col
+                - forecast_month
                 - model
                 - lake
                 - component
+                - value [mm]
 
         date_col : str, default='forecast_month'
             Column used to determine forecast month.
+
+        value_col : str, default='value [mm]'
+            Column containing forecast values to evaluate.
 
         component : str, default='nbs'
             Forecast component to evaluate.
@@ -1726,39 +1739,83 @@ class CEPCalculator:
         -------
         pandas.DataFrame
             Columns:
-                date, forecast_month, model, lake, component, cep
+                date, forecast_month, model, lake, component,
+                value [mm], cep
         """
 
-        required_cols = {date_col, "model", "lake", component}
+        required_cols = {
+            date_col,
+            "model",
+            "lake",
+            "component",
+            value_col
+        }
+
         missing = required_cols - set(df.columns)
 
         if missing:
-            raise ValueError(f"Forecast dataframe is missing columns: {missing}")
+            raise ValueError(
+                f"Forecast dataframe is missing columns: {missing}"
+            )
 
         temp = df.copy()
 
-        temp["date"] = pd.to_datetime(temp[date_col])
-        temp["_month"] = temp["date"].dt.strftime("%b")
-        temp["_lake"] = temp["lake"].str.lower().str.strip()
+        # Only evaluate requested component (e.g., nbs)
+        temp = temp[
+            temp["component"].str.lower() == component.lower()
+        ].copy()
 
+        if temp.empty:
+            raise ValueError(
+                f"No rows found for component '{component}'"
+            )
+
+        # Convert forecast month to datetime for CEP lookup
+        temp["date"] = pd.to_datetime(temp[date_col])
+
+        # Extract month name for climatology lookup
+        temp["_month"] = temp["date"].dt.strftime("%b")
+
+        # Standardize lake names
+        temp["_lake"] = (
+            temp["lake"]
+            .str.lower()
+            .str.strip()
+        )
+
+        # Calculate CEP
         temp["cep"] = temp.apply(
             lambda row: self._lookup_cep(
-                value=row[component],
+                value=row[value_col],
                 lake=row["_lake"],
                 month=row["_month"]
             ),
             axis=1
         )
 
+        # Format forecast_month back to YYYY-MM for output
+        temp[date_col] = temp["date"].dt.strftime("%Y-%m")
+
         df_cep = temp[
-            ["date", date_col, "model", "lake", component, "cep"]
+            [
+                "date",
+                date_col,
+                "model",
+                "lake",
+                "component",
+                value_col,
+                "cep"
+            ]
         ].copy()
 
         if output_file is not None:
-            df_cep.to_csv(output_file, sep=sep, index=False)
+            df_cep.to_csv(
+                output_file,
+                sep=sep,
+                index=False
+            )
 
         return df_cep
-
 
 def calculate_acc_variables(
     df,
