@@ -1693,6 +1693,7 @@ class CEPCalculator:
         self,
         df,
         date_col="forecast_month",
+        value_col="value [mm]",
         component="nbs",
         output_file=None,
         sep=","
@@ -1705,13 +1706,22 @@ class CEPCalculator:
         ----------
         df : pandas.DataFrame
             Input forecast dataframe containing:
-                - date_col
+                - forecast_month OR year and month
                 - model
                 - lake
                 - component
+                - value [mm]
 
-        date_col : str, default='forecast_month'
-            Column used to determine forecast month.
+        date_col : str or list, default='forecast_month'
+            Column(s) used to determine forecast month.
+
+            Options:
+                - "forecast_month": A single column in YYYY-MM format.
+                - ["year", "month"]&#58; Separate columns where year is YYYY
+                and month is an integer from 1-12.
+
+        value_col : str, default='value [mm]'
+            Column containing forecast values to evaluate.
 
         component : str, default='nbs'
             Forecast component to evaluate.
@@ -1726,36 +1736,123 @@ class CEPCalculator:
         -------
         pandas.DataFrame
             Columns:
-                date, forecast_month, model, lake, component, cep
+                date, forecast_month, model, lake, component,
+                value [mm], cep
         """
 
-        required_cols = {date_col, "model", "lake", component}
+        # ------------------------------------------------------------------
+        # Validate date columns
+        # ------------------------------------------------------------------
+        if date_col == "forecast_month":
+            required_date_cols = {"forecast_month"}
+
+        elif date_col == ["year", "month"]:
+            required_date_cols = {"year", "month"}
+
+        else:
+            raise ValueError(
+                "date_col must be either 'forecast_month' or ['year', 'month']"
+            )
+
+        required_cols = (
+            required_date_cols
+            | {"model", "lake", "component", value_col}
+        )
+
         missing = required_cols - set(df.columns)
 
         if missing:
-            raise ValueError(f"Forecast dataframe is missing columns: {missing}")
+            raise ValueError(
+                f"Forecast dataframe is missing columns: {missing}"
+            )
 
         temp = df.copy()
 
-        temp["date"] = pd.to_datetime(temp[date_col])
-        temp["_month"] = temp["date"].dt.strftime("%b")
-        temp["_lake"] = temp["lake"].str.lower().str.strip()
+        # ------------------------------------------------------------------
+        # Only evaluate requested component (e.g., nbs)
+        # ------------------------------------------------------------------
+        temp = temp[
+            temp["component"].str.lower() == component.lower()
+        ].copy()
 
+        if temp.empty:
+            raise ValueError(
+                f"No rows found for component '{component}'"
+            )
+
+        # ------------------------------------------------------------------
+        # Build forecast date
+        # ------------------------------------------------------------------
+        if date_col == "forecast_month":
+
+            # forecast_month should be YYYY-MM
+            temp["date"] = pd.to_datetime(
+                temp["forecast_month"],
+                format="%Y-%m"
+            )
+
+        else:
+            # Separate year/month columns
+            temp["date"] = pd.to_datetime(
+                dict(
+                    year=temp["year"].astype(int),
+                    month=temp["month"].astype(int),
+                    day=1
+                )
+            )
+
+            # Create forecast_month in YYYY-MM format
+            temp["forecast_month"] = (
+                temp["date"].dt.strftime("%Y-%m")
+            )
+
+        # ------------------------------------------------------------------
+        # Extract month name for climatology lookup
+        # ------------------------------------------------------------------
+        temp["_month"] = temp["date"].dt.strftime("%b")
+
+        # ------------------------------------------------------------------
+        # Standardize lake names
+        # ------------------------------------------------------------------
+        temp["_lake"] = (
+            temp["lake"]
+            .str.lower()
+            .str.strip()
+        )
+
+        # ------------------------------------------------------------------
+        # Calculate CEP
+        # ------------------------------------------------------------------
         temp["cep"] = temp.apply(
             lambda row: self._lookup_cep(
-                value=row[component],
+                value=row[value_col],
                 lake=row["_lake"],
                 month=row["_month"]
             ),
             axis=1
         )
 
+        # ------------------------------------------------------------------
+        # Create output
+        # ------------------------------------------------------------------
         df_cep = temp[
-            ["date", date_col, "model", "lake", component, "cep"]
+            [
+                "date",
+                "forecast_month",
+                "model",
+                "lake",
+                "component",
+                value_col,
+                "cep"
+            ]
         ].copy()
 
         if output_file is not None:
-            df_cep.to_csv(output_file, sep=sep, index=False)
+            df_cep.to_csv(
+                output_file,
+                sep=sep,
+                index=False
+            )
 
         return df_cep
 

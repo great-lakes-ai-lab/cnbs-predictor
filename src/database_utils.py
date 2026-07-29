@@ -238,33 +238,48 @@ class CFSDatabase:
         
     def add_df(self, df, if_exists="append"):
         """
-        Add an entire pandas DataFrame to the database table.
+        Add a pandas DataFrame to the database table.
 
         Parameters
         ----------
         df : pandas.DataFrame
-            The DataFrame to insert. Must contain the columns
-            ``['cfs_run', 'forecast_month', 'model', 'lake', 'precipitation',
-            'evaporation', 'runoff', 'nbs']``.
-        if_exists : str, default "append"
-            How to behave if the table already exists. One of ``'fail'``,
-            ``'replace'``, or ``'append'``.
+            DataFrame to insert.
+        if_exists : {"append", "replace", "fail"}, default "append"
+            Behavior if the table already exists.
         """
 
-        required_cols = ['cfs_run', 'forecast_month', 'model', 'lake', 'precipitation', 'evaporation', 'runoff', 'nbs']
-        missing_cols = [col for col in required_cols if col not in df.columns]
-        if missing_cols:
-            raise ValueError(f"Missing required columns in DataFrame: {missing_cols}")
-
         try:
-            conn = sqlite3.connect(self.database)
+            with sqlite3.connect(self.database) as conn:
 
-            # Insert DataFrame into the database
-            df.to_sql(self.table, conn, if_exists=if_exists, index=False)
+                # Check if the table already exists
+                table_exists = conn.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+                    (self.table,)
+                ).fetchone() is not None
 
-            conn.close()
+                # If appending to an existing table, verify columns match
+                if table_exists and if_exists == "append":
+                    db_columns = pd.read_sql_query(
+                        f"SELECT * FROM {self.table} LIMIT 0",
+                        conn
+                    ).columns.tolist()
+
+                    df_columns = df.columns.tolist()
+
+                    if db_columns != df_columns:
+                        raise ValueError(
+                            "DataFrame columns do not match database table.\n"
+                            f"Database:  {db_columns}\n"
+                            f"DataFrame: {df_columns}"
+                        )
+
+                # Write DataFrame
+                df.to_sql(self.table, conn, if_exists=if_exists, index=False)
+
         except sqlite3.DatabaseError as e:
-            raise sqlite3.DatabaseError(f"Database error occurred while inserting DataFrame: {e}")
+            raise sqlite3.DatabaseError(
+                f"Database error occurred while inserting DataFrame: {e}"
+            )
         
     def get_next_run(self):
         """
