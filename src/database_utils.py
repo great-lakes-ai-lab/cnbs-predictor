@@ -68,28 +68,149 @@ class CFSDatabase:
                 )
             ''')
 
-    def load(self):
+    def _date_columns(self, conn):
         """
-        Load the entire table into a DataFrame.
+        Report which forecast-date columns the table actually has.
+
+        The two writers in notebook 2 produce different layouts: the pivoted
+        frame carries a single ``forecast_month`` ('YYYY-MM') column, while the
+        unit-converted frame carries separate integer ``year`` and ``month``
+        columns. Callers sniff the layout the same way :meth:`pull` and
+        :meth:`add` sniff ``value`` vs ``value [mm]``.
+
+        Parameters
+        ----------
+        conn : sqlite3.Connection
+            Open connection to the database.
+
+        Returns
+        -------
+        tuple of bool
+            ``(has_year_month, has_forecast_month)``.
+        """
+        columns = {row[1] for row in conn.execute(f'PRAGMA table_info({self.table})')}
+        return {"year", "month"} <= columns, "forecast_month" in columns
+
+    def load(self, start_date=None):
+        """
+        Load the table into a DataFrame, optionally filtering in SQL.
+
+        Passing ``start_date`` pushes the forecast-month filter down into the
+        query so only the needed rows are read. This matters when the database
+        lives on a network share: filtering in pandas after a bare
+        ``SELECT *`` transfers the whole table first.
+
+        The filter is only usable if the table's date columns are indexed —
+        without an index SQLite scans every page regardless of the WHERE
+        clause, and reads no less data. :meth:`create_indexes` (run
+        automatically by :meth:`add_df`) provides that index.
+
+        Parameters
+        ----------
+        start_date : str, optional
+            Earliest forecast month to return, as anything
+            :class:`pandas.Period` accepts at monthly resolution — including
+            the 'MM-YYYY' returned by
+            :func:`src.utilities.get_first_forecast_month` and 'YYYY-MM'. If
+            None (default), the entire table is returned.
 
         Returns
         -------
         pandas.DataFrame
-            All rows of the configured table.
+            All rows of the configured table, or only those on/after
+            ``start_date``.
+
+        Raises
+        ------
+        ValueError
+            If ``start_date`` is given but the table has neither a
+            ``forecast_month`` column nor both ``year`` and ``month``.
         """
         # Create a connection to the SQLite database
         conn = sqlite3.connect(self.database)
 
-        # Use an f-string to insert the table name properly
-        query = f'SELECT * FROM {self.table}'
+        try:
+            # Use an f-string to insert the table name properly
+            query = f'SELECT * FROM {self.table}'
+            params = None
 
-        # Execute the query and fetch the data into a DataFrame
-        data = pd.read_sql(query, conn)
+            if start_date is not None:
+                # Accepts 'MM-YYYY', 'YYYY-MM', 'YYYY-MM-DD', ...
+                period = pd.Period(start_date, freq="M")
+                has_year_month, has_forecast_month = self._date_columns(conn)
 
-        # Close the connection once done
-        conn.close()
+                if has_year_month:
+                    # Written as two integer columns. Compared as
+                    # (year, month) pairs rather than an arithmetic
+                    # expression, because an expression over columns cannot
+                    # use the index and would force a full scan.
+                    query += ' WHERE year > ? OR (year = ? AND month >= ?)'
+                    params = (period.year, period.year, period.month)
+                elif has_forecast_month:
+                    # Written zero-padded via strftime('%Y-%m'), so a string
+                    # comparison orders months correctly.
+                    query += ' WHERE forecast_month >= ?'
+                    params = (str(period),)
+                else:
+                    raise ValueError(
+                        f"Cannot filter table '{self.table}' by start_date: it "
+                        "must contain either 'forecast_month' or "
+                        "('year','month') columns."
+                    )
+
+            # Execute the query and fetch the data into a DataFrame
+            data = pd.read_sql(query, conn, params=params)
+
+        finally:
+            # Close the connection once done
+            conn.close()
 
         return data
+
+    def create_indexes(self):
+        """
+        Index the table's forecast-date columns, if it has any.
+
+        Creating the index is what makes ``load(start_date=...)`` read less
+        data: with no index SQLite scans the full table even when a WHERE
+        clause is present, so a filtered query pulls just as many bytes over a
+        network share as an unfiltered one.
+
+        Safe to call repeatedly — it uses ``CREATE INDEX IF NOT EXISTS`` and
+        skips whichever columns the table does not have. :meth:`add_df` calls
+        it after every write, which also restores the index after an
+        ``if_exists='replace'`` write drops the table along with its indexes.
+
+        Returns
+        -------
+        list of str
+            Names of the indexes that now exist for this table.
+        """
+        created = []
+
+        conn = sqlite3.connect(self.database)
+        try:
+            has_year_month, has_forecast_month = self._date_columns(conn)
+
+            if has_year_month:
+                name = f'idx_{self.table}_year_month'
+                conn.execute(
+                    f'CREATE INDEX IF NOT EXISTS {name} ON {self.table} (year, month)'
+                )
+                created.append(name)
+
+            if has_forecast_month:
+                name = f'idx_{self.table}_forecast_month'
+                conn.execute(
+                    f'CREATE INDEX IF NOT EXISTS {name} ON {self.table} (forecast_month)'
+                )
+                created.append(name)
+
+            conn.commit()
+        finally:
+            conn.close()
+
+        return created
 
     def pull(self, cfs_run, year, month, lake, surface_type, component):
         """
@@ -246,6 +367,14 @@ class CFSDatabase:
             DataFrame to insert.
         if_exists : {"append", "replace", "fail"}, default "append"
             Behavior if the table already exists.
+
+        Notes
+        -----
+        Indexes the forecast-date columns afterwards via
+        :meth:`create_indexes`, so readers get the benefit of
+        ``load(start_date=...)`` without having to index the database
+        themselves. If indexing fails the write is still kept and a warning is
+        printed, since the index only affects speed and not correctness.
         """
 
         try:
@@ -279,6 +408,23 @@ class CFSDatabase:
         except sqlite3.DatabaseError as e:
             raise sqlite3.DatabaseError(
                 f"Database error occurred while inserting DataFrame: {e}"
+            )
+
+        # Keep the date index in place for readers using load(start_date=...).
+        # Done after the write completes: a "replace" write drops the table and
+        # its indexes, so re-creating here is what restores them.
+        #
+        # Indexing is an optimization, so failing to index must not turn a
+        # committed write into a raised error — the caller would otherwise
+        # retry and append the rows a second time. Warn and carry on instead;
+        # queries stay correct without the index, just slower.
+        try:
+            self.create_indexes()
+        except sqlite3.DatabaseError as e:
+            print(
+                f"WARNING: data was written, but indexing table '{self.table}' "
+                f"failed: {e}. Reads will still be correct, but "
+                "load(start_date=...) will not be able to skip rows."
             )
         
     def get_next_run(self):

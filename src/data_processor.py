@@ -1546,16 +1546,18 @@ class ForecastTransformer:
             return df
 
         elif "year" in df.columns and "month" in df.columns:
-            # Build Period
-            df["forecast_period"] = df.apply(lambda r: pd.Period(f"{r.year}-{r.month:02d}", freq="M"), axis=1)
+            # Compare months as integer ordinals (months since year 0) rather
+            # than building one Period object per row. Equivalent ordering,
+            # but vectorized — the per-row version dominated notebook 3's
+            # runtime on multi-million-row forecast tables.
+            month_ordinal = df["year"].astype(int) * 12 + df["month"].astype(int) - 1
+            min_ordinal = min_period.year * 12 + min_period.month - 1
 
-            first_month_in_data = df["forecast_period"].min()
-            first_month_to_keep = max(first_month_in_data, min_period)
+            first_month_in_data = month_ordinal.min()
+            first_month_to_keep = max(first_month_in_data, min_ordinal)
 
-            df = df[df["forecast_period"] >= first_month_to_keep]
+            df = df[month_ordinal >= first_month_to_keep]
 
-            # Optionally drop helper column
-            df = df.drop(columns=["forecast_period"])
             return df
 
         else:
