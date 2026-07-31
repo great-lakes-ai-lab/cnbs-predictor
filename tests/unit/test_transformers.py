@@ -379,3 +379,133 @@ class TestForecastTransformerPivot:
         out = ForecastTransformer(df).pivot()
         forecast_months = set(out["forecast_month"])
         assert {"2024-01", "2024-02"} == forecast_months
+
+
+# ===========================================================================
+# ForecastTransformer.filter — drop forecast months before a threshold
+# ===========================================================================
+class TestForecastTransformerFilter:
+    """
+    ``filter(first_forecast_month)`` keeps rows on or after the given month,
+    working from either a ``forecast_month`` column or a ``year``/``month``
+    pair.
+
+    The ``year``/``month`` branch is compared via integer month ordinals rather
+    than per-row Period objects, so these tests pin the month ordering — in
+    particular that a year rollover is not compared by month number alone.
+    """
+
+    @staticmethod
+    def _year_month_df(pairs):
+        """Build a DataFrame from (year, month) pairs with a running value column."""
+        return pd.DataFrame({
+            "year": [y for y, _ in pairs],
+            "month": [m for _, m in pairs],
+            "value": range(len(pairs)),
+        })
+
+    # --- year / month branch ------------------------------------------------
+    def test_drops_months_before_threshold(self):
+        """Rows earlier than the threshold month are removed."""
+        df = self._year_month_df([(2026, 5), (2026, 6), (2026, 7), (2026, 8)])
+        out = ForecastTransformer(df).filter("07-2026")
+        assert set(zip(out["year"], out["month"])) == {(2026, 7), (2026, 8)}
+
+    def test_threshold_month_is_inclusive(self):
+        """The threshold month itself is kept."""
+        df = self._year_month_df([(2026, 6), (2026, 7)])
+        out = ForecastTransformer(df).filter("07-2026")
+        assert (2026, 7) in set(zip(out["year"], out["month"]))
+
+    def test_year_rollover_kept(self):
+        """
+        January of the following year is after a July threshold. Comparing
+        month numbers alone (1 >= 7 is False) would wrongly drop it.
+        """
+        df = self._year_month_df([(2026, 7), (2027, 1)])
+        out = ForecastTransformer(df).filter("07-2026")
+        assert (2027, 1) in set(zip(out["year"], out["month"]))
+
+    def test_all_data_before_threshold_returns_empty(self):
+        """Nothing survives a threshold later than every row."""
+        df = self._year_month_df([(2025, 1), (2025, 2)])
+        out = ForecastTransformer(df).filter("07-2026")
+        assert out.empty
+
+    def test_all_data_after_threshold_returns_everything(self):
+        """Everything survives a threshold earlier than every row."""
+        df = self._year_month_df([(2027, 1), (2027, 2)])
+        out = ForecastTransformer(df).filter("07-2026")
+        assert len(out) == 2
+
+    def test_keeps_every_ensemble_member_of_a_kept_month(self):
+        """
+        The forecast database holds an ensemble, so many rows share the same
+        ``(year, month)``. Filtering selects whole months and must return all
+        members of each — not one row per month.
+        """
+        df = pd.DataFrame({
+            "year": [2026] * 6 + [2027] * 3,
+            "month": [6, 6, 6, 7, 7, 7, 1, 1, 1],
+            "model": ["RF", "GP", "XGB"] * 3,
+            "value": range(9),
+        })
+        out = ForecastTransformer(df).filter("07-2026")
+
+        assert out.groupby(["year", "month"]).size().to_dict() == {
+            (2026, 7): 3,
+            (2027, 1): 3,
+        }
+        assert sorted(out["model"].unique()) == ["GP", "RF", "XGB"]
+
+    def test_no_helper_column_leaks_into_output(self):
+        """
+        The output columns match the input — no intermediate period/ordinal
+        column is left behind for downstream plotting code to trip over.
+        """
+        df = self._year_month_df([(2026, 7), (2026, 8)])
+        out = ForecastTransformer(df).filter("07-2026")
+        assert list(out.columns) == ["year", "month", "value"]
+
+    def test_dtypes_preserved(self):
+        """Filtering does not re-type the year/month columns."""
+        df = self._year_month_df([(2026, 7), (2026, 8)])
+        out = ForecastTransformer(df).filter("07-2026")
+        assert out["year"].dtype == df["year"].dtype
+        assert out["month"].dtype == df["month"].dtype
+
+    @pytest.mark.parametrize("threshold", ["07-2026", "2026-07", "2026-07-01"])
+    def test_accepts_multiple_threshold_formats(self, threshold):
+        """
+        ``get_first_forecast_month()`` returns 'MM-YYYY'; 'YYYY-MM' and full
+        dates also parse, since the threshold goes through pandas.Period.
+        """
+        df = self._year_month_df([(2026, 6), (2026, 7), (2026, 8)])
+        out = ForecastTransformer(df).filter(threshold)
+        assert len(out) == 2
+
+    # --- forecast_month branch ---------------------------------------------
+    def test_forecast_month_branch_filters(self):
+        """The 'YYYY-MM' column form filters on the same threshold."""
+        df = pd.DataFrame({
+            "forecast_month": ["2026-06", "2026-07", "2026-10", "2027-01"],
+            "value": range(4),
+        })
+        out = ForecastTransformer(df).filter("07-2026")
+        assert set(out["forecast_month"]) == {"2026-07", "2026-10", "2027-01"}
+
+    def test_forecast_month_returned_as_string(self):
+        """
+        The column is handed back as 'YYYY-MM' strings, which is what the
+        plotting code parses with ``format="%Y-%m"``.
+        """
+        df = pd.DataFrame({"forecast_month": ["2026-07", "2026-08"], "value": [0, 1]})
+        out = ForecastTransformer(df).filter("07-2026")
+        assert out["forecast_month"].tolist() == ["2026-07", "2026-08"]
+
+    # --- error path ---------------------------------------------------------
+    def test_raises_without_recognizable_date_columns(self):
+        """A frame with neither layout cannot be filtered."""
+        df = pd.DataFrame({"cfs_run": ["2026070100"], "value": [1.0]})
+        with pytest.raises(ValueError, match="forecast_month"):
+            ForecastTransformer(df).filter("07-2026")
