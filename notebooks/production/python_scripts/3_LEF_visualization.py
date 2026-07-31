@@ -112,7 +112,7 @@ start_date = get_first_forecast_month()
 # This step loads the CNBS forecast output from the forecast database and filters the data to include only valid forecast months.
 # 
 # - **Load forecast data**  
-#   The `CFSDatabase` class reads the CNBS forecast results from the SQLite database (`cnbs_forecast.db`) and loads them into a dataframe.
+#   The `CFSDatabase` class reads the CNBS forecast results from the SQLite database (`cnbs_forecast.db`) and loads them into a dataframe. Passing `start_date` filters the records in SQL, so only the forecast months actually needed are read from the database instead of the whole table. This matters most when the database is on a shared network drive, where transferring the full table dominates the runtime.
 # 
 # - **Filter forecast months**  
 #   The `ForecastTransformer.filter()` function removes any forecast records that occur before the defined `start_date` (forecast month 0). This ensures that only current and future forecast periods are retained.
@@ -120,8 +120,8 @@ start_date = get_first_forecast_month()
 # The resulting dataframe, `df_filtered`, contains the cleaned forecast data used for subsequent analysis, visualization, and Probability of Exceedance calculations.
 
 # %%
-# Load CNBS predictions
-data = CFSDatabase(cnbs_database, cnbs_table).load()
+# Load CNBS predictions, filtering in SQL so only the needed months are read
+data = CFSDatabase(cnbs_database, cnbs_table).load(start_date=start_date)
 df_filtered = ForecastTransformer(data).filter(start_date)
 
 # %% [markdown]
