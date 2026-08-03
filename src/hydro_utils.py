@@ -126,6 +126,46 @@ def calculate_evaporation_rate(temperature_K, latent_heat_flux):
 
     return evaporation_rate_mm_s
 
+def calculate_latent_heat_flux(temperature_K, evaporation_rate_mm_s):
+    """
+    Convert evaporation rate to latent heat flux.
+
+    Parameters
+    ----------
+    temperature_K : float or array
+        Air temperature in Kelvin.
+
+    evaporation_rate_mm_s : float or array
+        Evaporation rate in mm/s.
+
+    Notes
+    -----
+    No input validation is performed. Negative ``temperature_K`` or
+    ``evaporation_rate_mm_s`` values will produce numerically valid but
+    physically meaningless results — callers are responsible for
+    sanity-checking inputs.
+    
+    Returns
+    -------
+    latent_heat_flux_W_m2 : float or array
+        Latent heat flux in W/m².
+    """
+
+    # Convert temperature to Celsius
+    temperature_C = temperature_K - 273.15
+
+    # Latent heat of vaporization (MJ/kg)
+    lambda_MJ_kg = 2.501 - 0.002361 * temperature_C
+
+    # mm/s = kg/(m²·s)
+    # Multiply by MJ/kg -> MJ/(m²·s)
+    latent_heat_flux_MJ = evaporation_rate_mm_s * lambda_MJ_kg
+
+    # Convert MJ/(m²·s) -> W/m²
+    latent_heat_flux_W_m2 = latent_heat_flux_MJ * 1e6
+
+    return latent_heat_flux_W_m2
+
 def convert_mm_to_cms(df):
     """
     Converts the 'value [mm]' in the dataframe to 'value [cms]' (cubic meters per second) based on lake surface area and the number of seconds in the month.
