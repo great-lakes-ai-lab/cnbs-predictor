@@ -168,3 +168,162 @@ def get_files(directory, affix, identifier):
                 if file_name.startswith(identifier):
                     files.append(os.path.join(directory, file_name))
         return files
+
+def format_cep_mean_forecast(
+    df_cep,
+    output_file=None,
+    models=None
+):
+    """
+    Format CEP forecast dataframe for reporting.
+
+    Parameters
+    ----------
+    df_cep : pandas.DataFrame
+        Long-format CEP forecast dataframe containing:
+        'forecast_month', 'model', 'lake', and 'cep'.
+
+    output_file : str, optional
+        Path to save formatted CSV. If None, file is not saved.
+
+    models : list, optional
+        Ordered list of models to include.
+
+    Returns
+    -------
+    pandas.DataFrame
+        Formatted CEP mean dataframe.
+    """
+
+    if models is None:
+        models = ["RF", "GP", "XGB", "NN"]
+
+    # ---------------------------------------------------------
+    # Start with copy
+    # ---------------------------------------------------------
+    df_format = df_cep.copy()
+
+    # Ensure forecast_month is datetime
+    df_format["forecast_month"] = pd.to_datetime(
+        df_format["forecast_month"],
+        format="%Y-%m"
+    )
+
+    # Lake abbreviations
+    lake_map = {
+        "superior": "SUP",
+        "michigan-huron": "MIH",
+        "erie": "ERI",
+        "ontario": "ONT"
+    }
+
+    df_format["lake"] = df_format["lake"].map(lake_map)
+
+    # Extract year and month
+    df_format["year"] = df_format["forecast_month"].dt.year
+    df_format["month"] = df_format["forecast_month"].dt.strftime("%b")
+
+    # ---------------------------------------------------------
+    # Pivot models into columns
+    # ---------------------------------------------------------
+    df_format["model"] = pd.Categorical(
+        df_format["model"],
+        categories=models,
+        ordered=True
+    )
+
+    df_format = df_format.sort_values(
+        ["forecast_month", "model", "lake"]
+    ).reset_index(drop=True)
+
+    df_final = df_format.pivot_table(
+        index=["lake", "year", "month"],
+        columns="model",
+        values="cep"
+    ).reset_index()
+
+    df_final.columns.name = None
+
+    # Ensemble mean
+    df_final["MEAN"] = (
+        df_final[models]
+        .mean(axis=1)
+        .round(2)
+    )
+
+    # ---------------------------------------------------------
+    # Apply ordering
+    # ---------------------------------------------------------
+    lake_order = ["SUP", "MIH", "ERI", "ONT"]
+
+    month_order = [
+        "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+        "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
+    ]
+
+    df_final["lake"] = pd.Categorical(
+        df_final["lake"],
+        categories=lake_order,
+        ordered=True
+    )
+
+    df_final["month"] = pd.Categorical(
+        df_final["month"],
+        categories=month_order,
+        ordered=True
+    )
+
+    df_final = df_final.sort_values(
+        ["lake", "year", "month"]
+    ).reset_index(drop=True)
+
+    # ---------------------------------------------------------
+    # Add blank rows between lakes
+    # ---------------------------------------------------------
+    df_final["lake"] = df_final["lake"].astype(str)
+
+    formatted_groups = []
+
+    for i, lake in enumerate(lake_order):
+
+        group = df_final[df_final["lake"] == lake].copy()
+
+        # Only display lake name on first row
+        if len(group) > 1:
+            group.loc[group.index[1:], "lake"] = ""
+
+        formatted_groups.append(group)
+
+        # Blank row between lakes
+        if i < len(lake_order) - 1:
+            formatted_groups.append(
+                pd.DataFrame(
+                    [[""] * len(df_final.columns)],
+                    columns=df_final.columns
+                )
+            )
+
+    df_final = pd.concat(
+        formatted_groups,
+        ignore_index=True
+    )
+
+    # ---------------------------------------------------------
+    # Format values
+    # ---------------------------------------------------------
+    value_cols = models + ["MEAN"]
+
+    for col in value_cols:
+        df_final[col] = df_final[col].map(
+            lambda x: f"{x:.2f}" if pd.notna(x) and x != "" else ""
+        )
+
+    # Save
+    if output_file is not None:
+        df_final.to_csv(
+            output_file,
+            index=False,
+            sep="\t"
+        )
+
+    return df_final

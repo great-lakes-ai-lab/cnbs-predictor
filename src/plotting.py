@@ -1231,14 +1231,8 @@ def plot_cep_timeseries(df_cep, filename=None):
 
     df = df_cep.copy()
 
-    df["date"] = pd.to_datetime(df["date"])
+    df["forecast_month"] = pd.to_datetime(df["forecast_month"], format="%Y-%m")
     df["lake"] = df["lake"].str.lower().str.strip()
-
-    # NEW: Take mean CEP for each model/lake/month
-    df = (
-        df.groupby(["date", "lake", "model"], as_index=False)["cep"]
-        .mean()
-    )
 
     lakes = ["superior", "michigan-huron", "erie", "ontario"]
 
@@ -1290,14 +1284,14 @@ def plot_cep_timeseries(df_cep, filename=None):
         for model_name in models_info:
             model_df = (
                 lake_df[lake_df["model"] == model_name]
-                .sort_values("date")
+                .sort_values("forecast_month")
             )
 
             if model_df.empty:
                 continue
 
             ax.plot(
-                model_df["date"],
+                model_df["forecast_month"],
                 model_df["cep"],
                 marker="o",
                 markersize=4,
@@ -1316,7 +1310,7 @@ def plot_cep_timeseries(df_cep, filename=None):
 
         ax.grid(True, linestyle="--", alpha=0.6)
         ax.set_ylim(0, 1)
-        ax.set_xlim(df["date"].min(), df["date"].max())
+        ax.set_xlim(df["forecast_month"].min(), df["forecast_month"].max())
         ax.set_ylabel(lake_labels[lake], fontsize=14)
 
         if row == len(lakes) - 1:
@@ -1384,7 +1378,7 @@ def plot_cep_spatial(
         The created figure.
     """
     df = df_cep.copy()
-    df["date"] = pd.to_datetime(df["forecast_month"])
+    df["date"] = pd.to_datetime(df["forecast_month"], format="%Y-%m")
     df["lake"] = df["lake"].str.lower().str.strip()
 
     if model is not None:
