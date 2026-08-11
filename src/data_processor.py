@@ -1695,7 +1695,7 @@ class CEPCalculator:
         self,
         df,
         date_col="forecast_month",
-        value_col="value [cms]",
+        value_col="value [mm]",
         component="nbs",
         output_file=None,
         sep=","
@@ -1712,14 +1712,14 @@ class CEPCalculator:
                 - model
                 - lake
                 - component
-                - value [cms]
+                - value [mm]
 
         date_col : str or list, default='forecast_month'
             Column(s) used to determine forecast month.
 
             Options:
                 - "forecast_month": A single column in YYYY-MM format.
-                - ["year", "month"]: Separate columns where year is YYYY
+                - ["year", "month"]&#58; Separate columns where year is YYYY
                 and month is an integer from 1-12.
 
         value_col : str, default='value [mm]'
@@ -1739,7 +1739,7 @@ class CEPCalculator:
         pandas.DataFrame
             Columns:
                 date, forecast_month, model, lake, component,
-                value [cms], cep
+                value [mm], cep
         """
 
         # ------------------------------------------------------------------
@@ -1839,11 +1839,11 @@ class CEPCalculator:
         # ------------------------------------------------------------------
         df_cep = temp[
             [
+                "date",
                 "forecast_month",
                 "model",
                 "lake",
                 "component",
-                "value [mm]",
                 value_col,
                 "cep"
             ]
