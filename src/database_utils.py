@@ -14,7 +14,7 @@ import os
 import pandas as pd
 import sys
 import time
-import re
+import sqlite3
 from datetime import datetime, timedelta, timezone
 from dateutil.relativedelta import relativedelta
 
@@ -50,46 +50,6 @@ class CFSDatabase:
         conn = sqlite3.connect(self.database)
         conn.close()
 
-    def _parse_start_date(self,start_date):
-        """
-        Convert a variety of date formats to a cfs_run integer (YYYYMMDDHH).
-
-        Accepted formats
-        ----------------
-        YYYYMMDDHH
-        YYYY-MM
-        MM-YYYY
-        YYYY-MM-DD
-        YYYY-MM-DD HH
-        """
-        if start_date is None:
-            return None
-
-        start_date = str(start_date).strip()
-
-        # Already in YYYYMMDDHH format
-        if re.fullmatch(r"\d{10}", start_date):
-            return int(start_date)
-
-        # YYYY-MM or MM-YYYY
-        try:
-            period = pd.Period(start_date, freq="M")
-            return int(period.strftime("%Y%m") + "0100")
-        except Exception:
-            pass
-
-        # Anything pandas can parse (YYYY-MM-DD, datetime, Timestamp, etc.)
-        try:
-            dt = pd.to_datetime(start_date)
-            return int(dt.strftime("%Y%m%d%H"))
-        except Exception:
-            pass
-
-        raise ValueError(
-            f"Invalid start_date '{start_date}'. "
-            "Expected YYYYMMDDHH, YYYY-MM, MM-YYYY, or a valid datetime."
-        )
-
     def create_cfs_table(self):
         """
         Create the standard CFS table schema if it does not exist.
@@ -108,18 +68,60 @@ class CFSDatabase:
                 )
             ''')
 
-    def load(self, start_date=None):
+    def _date_columns(self, conn):
+        """
+        Report which forecast-date columns the table actually has.
 
+        The two writers in notebook 2 produce different layouts: the pivoted
+        frame carries a single ``forecast_month`` ('YYYY-MM') column, while the
+        unit-converted frame carries separate integer ``year`` and ``month``
+        columns. Callers sniff the layout the same way :meth:`pull` and
+        :meth:`add` sniff ``value`` vs ``value [mm]``.
+
+        Parameters
+        ----------
+        conn : sqlite3.Connection
+            Open connection to the database.
+
+        Returns
+        -------
+        tuple of bool
+            ``(has_year_month, has_forecast_month)``.
+        """
+        columns = {row[1] for row in conn.execute(f'PRAGMA table_info({self.table})')}
+        return {"year", "month"} <= columns, "forecast_month" in columns
+
+    def load(self, start_date=None):
+        """
+        Load the table into a DataFrame, optionally filtering in SQL.
+        """
         conn = sqlite3.connect(self.database)
 
         try:
-            query = f"SELECT * FROM {self.table}"
+            query = f'SELECT * FROM {self.table}'
             params = None
 
             if start_date is not None:
-                start_date = self._parse_start_date(start_date)
-                query += " WHERE cfs_run >= ?"
-                params = (start_date,)
+                period = pd.Period(start_date, freq="M")
+                has_year_month, has_forecast_month = self._date_columns(conn)
+
+                if has_year_month:
+                    query += ' WHERE year > ? OR (year = ? AND month >= ?)'
+                    params = (period.year, period.year, period.month)
+
+                elif has_forecast_month:
+                    query += ' WHERE forecast_month >= ?'
+                    params = (str(period),)
+
+                else:
+                    raise ValueError(
+                        f"Cannot filter table '{self.table}' by start_date: it "
+                        "must contain either 'forecast_month' or "
+                        "('year','month') columns."
+                    )
+
+            # Sort by forecast initialization, then forecast year/month
+            query += ' ORDER BY cfs_run, year, month'
 
             data = pd.read_sql(query, conn, params=params)
 
@@ -130,26 +132,48 @@ class CFSDatabase:
 
     def create_indexes(self):
         """
-        Create an index on cfs_run if it exists.
+        Index the table's forecast-date columns, if it has any.
+
+        Creating the index is what makes ``load(start_date=...)`` read less
+        data: with no index SQLite scans the full table even when a WHERE
+        clause is present, so a filtered query pulls just as many bytes over a
+        network share as an unfiltered one.
+
+        Safe to call repeatedly — it uses ``CREATE INDEX IF NOT EXISTS`` and
+        skips whichever columns the table does not have. :meth:`add_df` calls
+        it after every write, which also restores the index after an
+        ``if_exists='replace'`` write drops the table along with its indexes.
+
+        Returns
+        -------
+        list of str
+            Names of the indexes that now exist for this table.
         """
+        created = []
+
         conn = sqlite3.connect(self.database)
-
         try:
-            columns = {
-                row[1] for row in conn.execute(f"PRAGMA table_info({self.table})")
-            }
+            has_year_month, has_forecast_month = self._date_columns(conn)
 
-            if "cfs_run" in columns:
-                name = f"idx_{self.table}_cfs_run"
+            if has_year_month:
+                name = f'idx_{self.table}_year_month'
                 conn.execute(
-                    f"CREATE INDEX IF NOT EXISTS {name} "
-                    f"ON {self.table} (cfs_run)"
+                    f'CREATE INDEX IF NOT EXISTS {name} ON {self.table} (year, month)'
                 )
+                created.append(name)
+
+            if has_forecast_month:
+                name = f'idx_{self.table}_forecast_month'
+                conn.execute(
+                    f'CREATE INDEX IF NOT EXISTS {name} ON {self.table} (forecast_month)'
+                )
+                created.append(name)
 
             conn.commit()
-
         finally:
             conn.close()
+
+        return created
 
     def pull(self, cfs_run, year, month, lake, surface_type, component):
         """
