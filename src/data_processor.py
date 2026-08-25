@@ -220,7 +220,7 @@ class CFSProcessor:
                         )
 
                         # Calculate mean 2-meter air temperature over the mask area.
-                        tmp_avg = np.mean(mean2t_remap * mask)
+                        
 
                         lake_abv, surface_type = mask_var.split("_")
                         lake = lake_lookup.get(lake_abv)
