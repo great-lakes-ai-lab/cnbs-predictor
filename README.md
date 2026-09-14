@@ -34,6 +34,10 @@ Forecast monthly **precipitation (P), evaporation (E), runoff (R), and net basin
 | L2SWBM       | Large Lake Statistical Water Balance Model     | [GLCC](https://zenodo.org/records/13883098)     | Training    |
 | RNBS         | Residual Net Basin Supply             | [GLCC](https://www.greatlakescc.org/en/coordinating-committee-products-and-datasets/)   | Training |
 
+### Workflow Diagram
+<p align="center">
+  <img src="assets/nbs-predictor_flowchart.png" alt="nbs-predictor_flowchart" width="500"/>
+</p>
 
 ## Getting Started
 
