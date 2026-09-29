@@ -10,6 +10,7 @@ resume incremental downloads where the previous run left off.
 """
 
 import sqlite3
+from pathlib import Path
 import os
 import pandas as pd
 import sys
@@ -18,14 +19,8 @@ import sqlite3
 from datetime import datetime, timedelta, timezone
 from dateutil.relativedelta import relativedelta
 
-class CFSDatabase:
-    """Manage a SQLite database of processed CFS forecast values.
-
-    Each instance is bound to one database file and one table. The table
-    stores one value per ``(cfs_run, year, month, lake, surface_type,
-    component)`` key. Methods cover schema creation, inserting individual
-    records or whole DataFrames, point lookups, and determining the next CFS
-    run to download.
+class Database:
+    """Manage a SQLite database of processed forecast values.
 
     Parameters
     ----------
@@ -45,8 +40,19 @@ class CFSDatabase:
 
     def _initialize_database(self):
         """
-        Ensure database file exists.
+        Ensure database directory and file exist.
         """
+
+        # Create parent directory if it does not exist
+        database_path = Path(self.database)
+
+        if database_path.parent != Path("."):
+            database_path.parent.mkdir(
+                parents=True,
+                exist_ok=True
+            )
+
+        # SQLite will create the database file if it does not exist
         conn = sqlite3.connect(self.database)
         conn.close()
 
@@ -91,42 +97,169 @@ class CFSDatabase:
         columns = {row[1] for row in conn.execute(f'PRAGMA table_info({self.table})')}
         return {"year", "month"} <= columns, "forecast_month" in columns
 
-    def load(self, start_date=None):
+    def load(
+        self,
+        start_date=None,
+        date_column=None,
+        date_column_format="%m-%Y"
+    ):
         """
-        Load the table into a DataFrame, optionally filtering in SQL.
+        Load the table into a DataFrame, optionally filtering by start date.
+
+        Parameters
+        ----------
+        start_date : str, optional
+            Start date in either:
+                "%m-%Y"
+                "%m-%d-%Y"
+
+            Examples:
+                "09-2026"
+                "09-15-2026"
+
+        date_column : str or list/tuple of str, optional
+            Column containing the date to filter on.
+
+            For separate year/month columns:
+                ["year", "month"]
+
+        date_column_format : str, default="%m-%Y"
+            Format of the date stored in the database column.
+
+            Examples:
+                "%Y-%m"
+                "%Y-%m-%d"
+                "%m/%d/%Y"
+
+        Returns
+        -------
+        pandas.DataFrame
+            Loaded data.
         """
+
         conn = sqlite3.connect(self.database)
 
         try:
-            query = f'SELECT * FROM {self.table}'
-            params = None
 
-            if start_date is not None:
-                period = pd.Period(start_date, freq="M")
-                has_year_month, has_forecast_month = self._date_columns(conn)
+            # --------------------------------------------------------
+            # Load full table
+            # --------------------------------------------------------
 
-                if has_year_month:
-                    query += ' WHERE year > ? OR (year = ? AND month >= ?)'
-                    params = (period.year, period.year, period.month)
+            query = f'SELECT * FROM "{self.table}"'
 
-                elif has_forecast_month:
-                    query += ' WHERE forecast_month >= ?'
-                    params = (str(period),)
-
-                else:
-                    raise ValueError(
-                        f"Cannot filter table '{self.table}' by start_date: it "
-                        "must contain either 'forecast_month' or "
-                        "('year','month') columns."
-                    )
-
-            # Sort by forecast initialization, then forecast year/month
-            query += ' ORDER BY cfs_run, year, month'
-
-            data = pd.read_sql(query, conn, params=params)
+            data = pd.read_sql(
+                query,
+                conn
+            )
 
         finally:
             conn.close()
+
+        # ------------------------------------------------------------
+        # No start date = return entire database
+        # ------------------------------------------------------------
+
+        if start_date is None:
+            return data
+
+        # ------------------------------------------------------------
+        # Validate date column
+        # ------------------------------------------------------------
+
+        if date_column is None:
+            raise ValueError(
+                "date_column must be specified when start_date is provided."
+            )
+
+        # ------------------------------------------------------------
+        # Parse start_date
+        # Accept either MM-YYYY or MM-DD-YYYY
+        # ------------------------------------------------------------
+
+        try:
+            start = pd.to_datetime(
+                start_date,
+                format="%m-%Y"
+            )
+
+        except ValueError:
+
+            try:
+                start = pd.to_datetime(
+                    start_date,
+                    format="%m-%d-%Y"
+                )
+
+            except ValueError:
+                raise ValueError(
+                    f"Invalid start_date '{start_date}'. "
+                    "Expected format '%m-%Y' or '%m-%d-%Y'."
+                )
+
+        # ------------------------------------------------------------
+        # Separate year/month columns
+        # ------------------------------------------------------------
+
+        if isinstance(date_column, (list, tuple)):
+
+            if len(date_column) != 2:
+                raise ValueError(
+                    "When using multiple date columns, provide "
+                    "exactly two columns: ['year', 'month']."
+                )
+
+            year_column, month_column = date_column
+
+            if year_column not in data.columns:
+                raise ValueError(
+                    f"Column '{year_column}' does not exist."
+                )
+
+            if month_column not in data.columns:
+                raise ValueError(
+                    f"Column '{month_column}' does not exist."
+                )
+
+            data["_filter_date"] = pd.to_datetime(
+                data[year_column].astype(str)
+                + "-"
+                + data[month_column].astype(str).str.zfill(2)
+                + "-01"
+            )
+
+            data = data[
+                data["_filter_date"] >= start
+            ].drop(
+                columns="_filter_date"
+            )
+
+        # ------------------------------------------------------------
+        # Single date column
+        # ------------------------------------------------------------
+
+        else:
+
+            if date_column not in data.columns:
+                raise ValueError(
+                    f"Column '{date_column}' does not exist."
+                )
+
+            data["_filter_date"] = pd.to_datetime(
+                data[date_column],
+                format=date_column_format
+            )
+
+            data = data[
+                data["_filter_date"] >= start
+            ].drop(
+                columns="_filter_date"
+            )
+
+        # ------------------------------------------------------------
+        # Reset index
+        # ------------------------------------------------------------
+
+        data = data.reset_index(drop=True)
 
         return data
 
@@ -527,3 +660,22 @@ class CFSDatabase:
 
         except sqlite3.Error as e:
             print(f"Database error: {e}")
+
+    def create_sfs_table(self):
+            """
+            Create the standard CFS table schema if it does not exist.
+            """
+            with sqlite3.connect(self.database) as conn:
+                conn.execute(f'''
+                    CREATE TABLE IF NOT EXISTS {self.table} (
+                        init_time TEXT,
+                        member INTEGER,
+                        lead INTEGER,
+                        valid_time TEXT,
+                        lake TEXT,
+                        surface_type TEXT,
+                        component TEXT,
+                        value REAL,
+                        PRIMARY KEY (init_time, member, lead, valid_time, lake, surface_type, component)
+                    )
+                ''')

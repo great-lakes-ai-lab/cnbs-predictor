@@ -39,7 +39,7 @@ from typing import Optional, Sequence, Dict
 from properscoring import crps_ensemble
 from sklearn.metrics import mean_squared_error, r2_score
 
-from src.database_utils import CFSDatabase
+from src.database_utils import Database
 from src.hydro_utils import calculate_evaporation_rate, calculate_grid_cell_areas
 
 class CFSProcessor:
@@ -64,7 +64,7 @@ class CFSProcessor:
         """
         self.database = database
         self.table = table
-        self.db = CFSDatabase(database, table)
+        self.db = Database(database, table)
     
     def process_files(self, download_dir, mask_file, mask_variables):
         """
@@ -431,8 +431,18 @@ class SeasonalCycleProcessor:
             Fitted processor with climatology stored internally.
         """
 
-        if not isinstance(df.index, pd.DatetimeIndex):
-            raise ValueError("DataFrame must have a DatetimeIndex.")
+        if not isinstance(df.index, pd.MultiIndex):
+            raise ValueError(
+                "DataFrame must have a MultiIndex."
+            )
+
+        if not isinstance(
+            df.index.get_level_values("init_time"),
+            pd.DatetimeIndex
+        ):
+            raise ValueError(
+                "The 'init_time' index level must be a DatetimeIndex."
+            )
 
         if var_list is None:
             var_list = [c for c in df.columns if pd.api.types.is_numeric_dtype(df[c])]
@@ -449,7 +459,7 @@ class SeasonalCycleProcessor:
             raise ValueError("Baseline selection resulted in empty DataFrame.")
 
         # Compute monthly mean climatology
-        months = fit_df.index.month
+        months = fit_df.index.get_level_values("init_time").month
         climatology = fit_df[var_list].groupby(months).mean()
         climatology.index.name = "month"
 
@@ -493,11 +503,17 @@ class SeasonalCycleProcessor:
         if self.climatology is None:
             raise ValueError("Processor must be fitted before calling transform().")
 
-        if not isinstance(df.index, pd.DatetimeIndex):
-            raise ValueError("DataFrame must have a DatetimeIndex.")
+        if not isinstance(df.index, pd.MultiIndex):
+            raise ValueError("DataFrame must have a MultiIndex.")
+
+        if not isinstance(
+            df.index.get_level_values("init_time"),
+            pd.DatetimeIndex
+        ):
+            raise ValueError("The 'init_time' index level must be a DatetimeIndex.")
 
         var_list = self.metadata["var_list"]
-        months = df.index.month
+        months = df.index.get_level_values("init_time").month
 
         out = df.copy()
         out[var_list] = (
@@ -533,7 +549,7 @@ class SeasonalCycleProcessor:
             raise ValueError("DataFrame must have a DatetimeIndex.")
 
         var_list = self.metadata["var_list"]
-        months = df.index.month
+        months = df.index.get_level_values("init_time").month
 
         out = df.copy()
         out[var_list] = (
@@ -1189,9 +1205,17 @@ class CFSTransformer:
         # ---------------------------------------------------------
         # Ensure dataframe uses a DatetimeIndex
         # ---------------------------------------------------------
-        if not isinstance(out.index, pd.DatetimeIndex):
-            raise TypeError(
-                "DataFrame index must be a pandas DatetimeIndex."
+        if not isinstance(out.index, pd.MultiIndex):
+            raise ValueError(
+                "DataFrame must have a MultiIndex."
+            )
+
+        if not isinstance(
+            out.index.get_level_values("init_time"),
+            pd.DatetimeIndex
+        ):
+            raise ValueError(
+                "The 'init_time' index level must be a DatetimeIndex."
             )
 
         # ---------------------------------------------------------
@@ -1211,7 +1235,7 @@ class CFSTransformer:
         if add_month_cycle:
 
             # Convert months to numpy array for vectorized operations
-            month = out.index.month.to_numpy()
+            month = out.index.get_level_values("init_time").month.to_numpy()
             # Encode month as cyclical sine/cosine coordinates
             out["month_sin"] = np.sin(
                 2 * np.pi * month / 12
@@ -1233,8 +1257,8 @@ class CFSTransformer:
             #   Jul 2015 -> 2015.50
             #
             t = (
-                out.index.year.to_numpy()
-                + (out.index.month.to_numpy() - 1) / 12.0
+                out.index.get_level_values("init_time").year.to_numpy()
+                + (out.index.get_level_values("init_time").month.to_numpy() - 1) / 12.0
             )
             # Shift to start at zero for numerical stability
             time = t - t.min()
