@@ -818,8 +818,16 @@ class SeasonalCycleProcessor:
             If `strict=True` and a base variable is not found in the
             climatology columns.
         """
-        if not isinstance(df_abs_leadwide.index, pd.DatetimeIndex):
-            raise ValueError("df_abs_leadwide must have a DatetimeIndex.")
+        # ---------------------------------------------------------
+        # Check that init_time exists as a MultiIndex level
+        # ---------------------------------------------------------
+        if not isinstance(df_abs_leadwide.index, pd.MultiIndex):
+            raise ValueError("df_abs_leadwide must have a MultiIndex.")
+
+        if "init_time" not in df_abs_leadwide.index.names:
+            raise ValueError(
+                "df_abs_leadwide MultiIndex must contain an 'init_time' level."
+            )
 
         if not hasattr(scp_X, "climatology"):
             raise AttributeError("scp_X must have a `climatology` attribute.")
@@ -830,7 +838,9 @@ class SeasonalCycleProcessor:
         out = df_abs_leadwide.copy()
         out.columns = out.columns.astype(str).str.strip()
 
-        idx = out.index
+        idx = pd.DatetimeIndex(
+            out.index.get_level_values("init_time")
+        )
 
         _MO_RE = re.compile(r"_mo(\d+)$")
 
@@ -885,15 +895,22 @@ class SeasonalCycleProcessor:
         pd.DataFrame
             Same shape/columns/index as `df_anom_leadwide`, but in absolute units.
         """
-        if not isinstance(df_anom_leadwide.index, pd.DatetimeIndex):
-            raise ValueError("df_anom_leadwide must have a DatetimeIndex (init dates).")
+        if not isinstance(df_anom_leadwide.index, pd.MultiIndex):
+            raise ValueError("df_anom_leadwide must have a MultiIndex.")
+
+        if "init_time" not in df_anom_leadwide.index.names:
+            raise ValueError(
+                "df_anom_leadwide MultiIndex must contain an 'init_time' level."
+            )
 
         if not hasattr(scp_y, "climatology"):
-            raise AttributeError("scp_y must have a `climatology` attribute (fit the processor first).")
+            raise AttributeError("scp_y must have a `climatology` attribute.")
 
         clim = scp_y.climatology
         out = df_anom_leadwide.copy()
-        idx = out.index
+        idx = pd.DatetimeIndex(
+            out.index.get_level_values("init_time")
+        )
 
         for col in out.columns:
             m = SeasonalCycleProcessor._MO_RE.search(col)
@@ -1072,43 +1089,30 @@ class CFSTransformer:
         value_col = "value [mm]" if "value [mm]" in data.columns else "value"
 
         # --- Ensure cfs_run is datetime (critical for pivot stability) ---
-        data["cfs_run"] = pd.to_datetime(
-            data["cfs_run"].astype(str),
-            format="%Y%m%d%H",
-            errors="raise"
+        data["init_time"] = pd.to_datetime(
+            data["init_time"].astype(str)
         )
 
         # --- Build forecast date ---
-        data["forecast_date"] = pd.to_datetime(
-            dict(year=data["year"], month=data["month"], day=1)
+        data["valid_time"] = pd.to_datetime(
+            data["valid_time"].astype(str)
         )
-
-        # --- Compute forecast month index ---
-        data["forecast_month"] = (
-            (data["forecast_date"].dt.year - data["cfs_run"].dt.year) * 12 +
-            (data["forecast_date"].dt.month - data["cfs_run"].dt.month)
-        )
-
-        data.drop(columns="forecast_date", inplace=True)
 
         # --- Build deterministic column names ---
         data["column_name"] = (
             data["lake"] + "_" +
             data["surface_type"] + "_" +
             data["component"] + "_mo" +
-            data["forecast_month"].astype(str)
+            data["lead"].astype(str)
         )
 
         # --- Pivot safely ---
         df_wide = data.pivot_table(
-            index="cfs_run",
+            index=["init_time", "member"],
             columns="column_name",
             values=value_col,
             aggfunc="first"
         )
-
-        # --- Remove unwanted forecast horizon ---
-        df_wide = df_wide.loc[:, ~df_wide.columns.astype(str).str.endswith("_mo10")]
 
         # --- Ensure all values are float-ready + consistent ---
         df_wide.columns.name = None
@@ -1119,7 +1123,7 @@ class CFSTransformer:
             for lake in ["superior", "michigan-huron", "erie", "ontario"]
             for surface_type in ["lake", "land"]
             for comp in ["precipitation", "evaporation", "air_temperature"]
-            for m in range(10)
+            for m in range(12)
         ]
 
         # --- Ensure columns are in the correct order ---
