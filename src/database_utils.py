@@ -319,8 +319,7 @@ class CFSDatabase:
 
         print(f"Failed to write record after {max_retries} attempts — skipping forecast.")
 
-        
-    def add_df(self, df, if_exists="append"):
+    def add_df(self, df, if_exists="append", unique_columns=None):
         """
         Add a pandas DataFrame to the database table.
 
@@ -330,29 +329,34 @@ class CFSDatabase:
             DataFrame to insert.
         if_exists : {"append", "replace", "fail"}, default "append"
             Behavior if the table already exists.
-
-        Notes
-        -----
-        Indexes the forecast-date columns afterwards via
-        :meth:`create_indexes`, so readers get the benefit of
-        ``load(start_date=...)`` without having to index the database
-        themselves. If indexing fails the write is still kept and a warning is
-        printed, since the index only affects speed and not correctness.
+        unique_columns : list, optional
+            Columns used to identify duplicate rows. If a matching
+            combination exists, the existing row is updated with the
+            new values. If None, rows are simply appended.
         """
 
         try:
             with sqlite3.connect(self.database) as conn:
 
-                # Check if the table already exists
                 table_exists = conn.execute(
                     "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
                     (self.table,)
                 ).fetchone() is not None
 
-                # If appending to an existing table, verify columns match
-                if table_exists and if_exists == "append":
+                # Create or replace table
+                if if_exists == "replace" or not table_exists:
+                    df.to_sql(
+                        self.table,
+                        conn,
+                        if_exists=if_exists,
+                        index=False
+                    )
+
+                elif if_exists == "append":
+
+                    # Verify columns match
                     db_columns = pd.read_sql_query(
-                        f"SELECT * FROM {self.table} LIMIT 0",
+                        f'SELECT * FROM "{self.table}" LIMIT 0',
                         conn
                     ).columns.tolist()
 
@@ -365,31 +369,112 @@ class CFSDatabase:
                             f"DataFrame: {df_columns}"
                         )
 
-                # Write DataFrame
-                df.to_sql(self.table, conn, if_exists=if_exists, index=False)
+                    if unique_columns is not None:
+
+                        # Verify unique columns exist
+                        missing = [
+                            col for col in unique_columns
+                            if col not in df.columns
+                        ]
+
+                        if missing:
+                            raise ValueError(
+                                f"Unique columns not found: {missing}"
+                            )
+
+                        if not unique_columns:
+                            raise ValueError(
+                                "unique_columns cannot be an empty list."
+                            )
+
+                        # Remove duplicates within incoming DataFrame
+                        df = df.drop_duplicates(
+                            subset=unique_columns,
+                            keep="last"
+                        )
+
+                        # Create a unique index in SQLite
+                        index_name = f"idx_unique_{self.table}"
+
+                        index_columns = ", ".join(
+                            f'"{col}"' for col in unique_columns
+                        )
+
+                        conn.execute(f"""
+                            CREATE UNIQUE INDEX IF NOT EXISTS "{index_name}"
+                            ON "{self.table}" ({index_columns})
+                        """)
+
+                        # Build INSERT statement
+                        columns = ", ".join(
+                            f'"{col}"' for col in df.columns
+                        )
+
+                        placeholders = ", ".join(
+                            ["?"] * len(df.columns)
+                        )
+
+                        # Update all columns except the unique columns
+                        update_columns = [
+                            col for col in df.columns
+                            if col not in unique_columns
+                        ]
+
+                        if update_columns:
+                            update_clause = ", ".join(
+                                f'"{col}" = excluded."{col}"'
+                                for col in update_columns
+                            )
+
+                            conflict_clause = f"""
+                                ON CONFLICT ({index_columns})
+                                DO UPDATE SET {update_clause}
+                            """
+                        else:
+                            conflict_clause = """
+                                ON CONFLICT DO NOTHING
+                            """
+
+                        sql = f"""
+                            INSERT INTO "{self.table}" ({columns})
+                            VALUES ({placeholders})
+                            {conflict_clause}
+                        """
+
+                        # Insert/update rows
+                        conn.executemany(
+                            sql,
+                            df.itertuples(index=False, name=None)
+                        )
+
+                    else:
+                        # Original append behavior
+                        df.to_sql(
+                            self.table,
+                            conn,
+                            if_exists="append",
+                            index=False
+                        )
+
+                elif if_exists == "fail":
+                    raise ValueError(
+                        f"Table '{self.table}' already exists."
+                    )
 
         except sqlite3.DatabaseError as e:
             raise sqlite3.DatabaseError(
                 f"Database error occurred while inserting DataFrame: {e}"
             )
 
-        # Keep the date index in place for readers using load(start_date=...).
-        # Done after the write completes: a "replace" write drops the table and
-        # its indexes, so re-creating here is what restores them.
-        #
-        # Indexing is an optimization, so failing to index must not turn a
-        # committed write into a raised error — the caller would otherwise
-        # retry and append the rows a second time. Warn and carry on instead;
-        # queries stay correct without the index, just slower.
+        # Re-create indexes
         try:
             self.create_indexes()
         except sqlite3.DatabaseError as e:
             print(
-                f"WARNING: data was written, but indexing table '{self.table}' "
-                f"failed: {e}. Reads will still be correct, but "
-                "load(start_date=...) will not be able to skip rows."
+                f"WARNING: data was written, but indexing table "
+                f"'{self.table}' failed: {e}."
             )
-        
+ 
     def get_next_run(self):
         """
         Determine the next CFS run date to download.

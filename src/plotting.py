@@ -36,40 +36,66 @@ def plot_cnbs_forecast(
         df,
         filename=None,
         units="mm",
-        date_col="forecast_month"
-    ):
+        date_col="forecast_month",
+        climatology=None
+):
     """
     Static Matplotlib plot for Great Lakes CNBS forecasts.
 
     Parameters
     ----------
     df : pd.DataFrame
-        Long-format dataframe containing:
-        ["cfs_run", "forecast_month", "model", "lake", "component",
-         "value [mm]", "value [cms]"]
-
-        Alternatively, the forecast month can be represented by
-        separate "year" and "month" columns.
+        Long-format forecast dataframe.
 
     filename : str, optional
-        Path to save the PNG. If None, the plot is displayed only
-        and not saved.
+        Path to save the PNG.
 
     units : str, default="mm"
-        Units to plot. Options:
-        - "mm"  : uses "value [mm]"
-        - "cms" : uses "value [cms]"
+        Units to plot: "mm" or "cms".
 
     date_col : str or list, default="forecast_month"
-        Column(s) used to determine the forecast date.
+        Either "forecast_month" or ["year", "month"].
 
-        Options:
-        - "forecast_month": A single column in YYYY-MM format.
-        - ["year", "month"]&#58; Separate columns where year is YYYY
-          and month is an integer from 1-12.
+    climatology : str or pd.DataFrame, optional
+        Path to a CSV climatology file or a DataFrame.
+        Expected columns follow the format:
+        "{lake}_target_{component}"
+
+        The index must contain calendar months (1-12).
+        Climatology values must use the same units as the forecast.
     """
 
     df = df.copy()
+
+    # --------------------------------------------------------------
+    # Load climatology
+    # --------------------------------------------------------------
+    clim_df = None
+
+    if climatology is not None:
+
+        if isinstance(climatology, pd.DataFrame):
+            clim_df = climatology.copy()
+
+        else:
+            clim_df = pd.read_csv(
+                climatology,
+                index_col="month"
+            )
+
+        # Ensure month index is integer
+        if "month" in clim_df.columns:
+            clim_df = clim_df.set_index("month")
+
+        clim_df.index = clim_df.index.astype(int)
+
+        # Validate month index
+        if not clim_df.index.isin(range(1, 13)).all():
+            raise ValueError(
+                "Climatology month index must contain values 1-12."
+            )
+
+        clim_df = clim_df.apply(pd.to_numeric, errors="coerce")
 
     # --------------------------------------------------------------
     # Validate date columns
@@ -82,7 +108,8 @@ def plot_cnbs_forecast(
 
     else:
         raise ValueError(
-            "date_col must be either 'forecast_month' or ['year', 'month']"
+            "date_col must be either 'forecast_month' "
+            "or ['year', 'month']"
         )
 
     required_cols = (
@@ -139,9 +166,19 @@ def plot_cnbs_forecast(
             )
         )
 
-        # Create standardized forecast_month for grouping
         df["forecast_month"] = (
             df["date"].dt.strftime("%Y-%m")
+        )
+
+    # --------------------------------------------------------------
+    # Create climatology dates
+    # --------------------------------------------------------------
+    if clim_df is not None:
+
+        clim_dates = pd.date_range(
+            start=df["date"].min(),
+            end=df["date"].max(),
+            freq="MS"
         )
 
     # --------------------------------------------------------------
@@ -188,6 +225,13 @@ def plot_cnbs_forecast(
         "evaporation",
         "runoff",
         "nbs"
+    ]
+
+    component_titles = [
+        "Precipitation",
+        "Evaporation",
+        "Runoff",
+        "NBS"
     ]
 
     # --------------------------------------------------------------
@@ -283,7 +327,7 @@ def plot_cnbs_forecast(
                 )
 
             # ------------------------------------------------------
-            # 95% confidence interval
+            # Plot 95% confidence interval
             # ------------------------------------------------------
             ax.fill_between(
                 lower["date"],
@@ -293,6 +337,32 @@ def plot_cnbs_forecast(
                 alpha=0.2,
                 label="95%"
             )
+
+            # ------------------------------------------------------
+            # Plot climatology
+            # ------------------------------------------------------
+            if clim_df is not None:
+
+                clim_col = f"{lake}_target_{comp}"
+
+                if clim_col in clim_df.columns:
+
+                    # Match each forecast date to its calendar month
+                    clim_months = clim_dates.month
+
+                    clim_values = clim_df[clim_col].reindex(
+                        clim_months
+                    ).to_numpy()
+                    
+                    ax.plot(
+                        clim_dates,
+                        clim_values,
+                        color="black",
+                        linestyle="--",
+                        linewidth=2,
+                        label="Climatology",
+                        zorder=5
+                    )
 
             ax.axhline(
                 0,
@@ -308,26 +378,50 @@ def plot_cnbs_forecast(
             )
 
             # ------------------------------------------------------
-            # Track y limits
+            # Track y limits (include climatology)
             # ------------------------------------------------------
             current_y_min = lower[value_col].min()
             current_y_max = upper[value_col].max()
 
+            if clim_df is not None:
+
+                clim_col = f"{lake}_target_{comp}"
+
+                if clim_col in clim_df.columns:
+
+                    current_clim = clim_df[clim_col].dropna()
+
+                    if not current_clim.empty:
+
+                        current_y_min = min(
+                            current_y_min,
+                            current_clim.min()
+                        )
+
+                        current_y_max = max(
+                            current_y_max,
+                            current_clim.max()
+                        )
+
             if col < 3:
+
                 shared_y_min = min(
                     shared_y_min,
                     current_y_min
                 )
+
                 shared_y_max = max(
                     shared_y_max,
                     current_y_max
                 )
 
             else:
+
                 col4_y_min = min(
                     col4_y_min,
                     current_y_min
                 )
+
                 col4_y_max = max(
                     col4_y_max,
                     current_y_max
@@ -337,13 +431,9 @@ def plot_cnbs_forecast(
             # Titles
             # ------------------------------------------------------
             if row == 0:
+
                 ax.set_title(
-                    [
-                        "Precipitation",
-                        "Evaporation",
-                        "Runoff",
-                        "NBS"
-                    ][col],
+                    component_titles[col],
                     fontsize=14
                 )
 
@@ -371,10 +461,12 @@ def plot_cnbs_forecast(
             # Y-axis
             # ------------------------------------------------------
             if col == 0:
+
                 ax.set_ylabel(
                     lake.capitalize(),
                     fontsize=14
                 )
+
             else:
                 ax.set_yticklabels([])
 
@@ -387,17 +479,21 @@ def plot_cnbs_forecast(
 
             if col_idx < 3:
 
-                axs[row_idx, col_idx].set_ylim(
-                    shared_y_min - 10,
-                    shared_y_max + 10
-                )
+                if shared_y_min != float("inf"):
+
+                    axs[row_idx, col_idx].set_ylim(
+                        shared_y_min - 10,
+                        shared_y_max + 10
+                    )
 
             else:
 
-                axs[row_idx, col_idx].set_ylim(
-                    col4_y_min - 10,
-                    col4_y_max + 10
-                )
+                if col4_y_min != float("inf"):
+
+                    axs[row_idx, col_idx].set_ylim(
+                        col4_y_min - 10,
+                        col4_y_max + 10
+                    )
 
             axs[row_idx, col_idx].set_xlim(
                 df["date"].min(),
@@ -425,10 +521,10 @@ def plot_cnbs_forecast(
     # --------------------------------------------------------------
     if filename:
 
-        os.makedirs(
-            os.path.dirname(filename),
-            exist_ok=True
-        )
+        output_dir = os.path.dirname(filename)
+
+        if output_dir:
+            os.makedirs(output_dir, exist_ok=True)
 
         plt.savefig(
             filename,
@@ -437,13 +533,13 @@ def plot_cnbs_forecast(
 
     plt.show()
 
-
 def plot_cnbs_forecast_interactive(
-        df,
-        filename=None,
-        units="mm",
-        date_col="forecast_month"
-    ):
+    df,
+    filename=None,
+    units="mm",
+    date_col="forecast_month",
+    climatology_file=None
+):
     """
     Interactive Plotly plot for Great Lakes CNBS forecasts.
 
@@ -470,8 +566,24 @@ def plot_cnbs_forecast_interactive(
 
         Options:
         - "forecast_month": A single column in YYYY-MM format.
-        - ["year", "month"]&#58; Separate columns where year is YYYY
+        - ["year", "month"]: Separate columns where year is YYYY
           and month is an integer from 1-12.
+
+    climatology_file : str or pd.DataFrame, optional
+        Path to a climatology CSV file or a pandas DataFrame.
+
+        The climatology DataFrame should have months 1-12 as its
+        index (or a "month" column) and columns formatted as:
+
+        superior_target_precipitation
+        superior_target_evaporation
+        superior_target_runoff
+        superior_target_nbs
+
+        The same naming convention applies to the other lakes.
+
+        Climatology values must be in the same units as the
+        selected forecast units.
     """
 
     df = df.copy()
@@ -550,6 +662,49 @@ def plot_cnbs_forecast_interactive(
         )
 
     # --------------------------------------------------------------
+    # Load optional climatology
+    # --------------------------------------------------------------
+    clim_df = None
+
+    if climatology_file is not None:
+
+        if isinstance(climatology_file, pd.DataFrame):
+
+            clim_df = climatology_file.copy()
+
+        else:
+
+            clim_df = pd.read_csv(
+                climatology_file,
+                index_col="month"
+            )
+
+        # Ensure month is the index
+        if "month" in clim_df.columns:
+            clim_df = clim_df.set_index("month")
+
+        # Ensure month index is integer
+        clim_df.index = clim_df.index.astype(int)
+
+        # Validate month index
+        if not clim_df.index.isin(range(1, 13)).all():
+            raise ValueError(
+                "Climatology month index must contain values 1-12."
+            )
+
+        clim_df = clim_df.apply(
+            pd.to_numeric,
+            errors="coerce"
+        )
+
+        # Create climatology dates covering the forecast period
+        clim_dates = pd.date_range(
+            start=df["date"].min(),
+            end=df["date"].max(),
+            freq="MS"
+        )
+
+    # --------------------------------------------------------------
     # Models
     # --------------------------------------------------------------
     models_info = df["model"].unique().tolist()
@@ -615,6 +770,9 @@ def plot_cnbs_forecast_interactive(
 
     global_y_min = float("inf")
     global_y_max = float("-inf")
+
+    # Track climatology legend entry
+    clim_legend_shown = False
 
     # --------------------------------------------------------------
     # Plot each lake/component
@@ -739,15 +897,75 @@ def plot_cnbs_forecast_interactive(
                     col=col + 1
                 )
 
-                global_y_min = min(
-                    global_y_min,
-                    lower[value_col].min()
-                )
+            # ------------------------------------------------------
+            # Plot climatology
+            # ------------------------------------------------------
+            if clim_df is not None:
 
-                global_y_max = max(
-                    global_y_max,
-                    upper[value_col].max()
-                )
+                clim_col = f"{lake}_target_{comp}"
+
+                if clim_col in clim_df.columns:
+
+                    # Match each forecast date to its calendar month
+                    clim_months = clim_dates.month
+
+                    clim_values = (
+                        clim_df[clim_col]
+                        .reindex(clim_months)
+                        .to_numpy()
+                    )
+
+                    fig.add_trace(
+                        go.Scatter(
+                            x=clim_dates,
+                            y=clim_values,
+                            mode="lines",
+                            name="Climatology",
+                            line=dict(
+                                color="black",
+                                dash="dash",
+                                width=2
+                            ),
+                            showlegend=not clim_legend_shown,
+                            hovertemplate=(
+                                "Date: %{x}<br>"
+                                f"Climatology ({units_label}): %{{y}}"
+                                "<extra></extra>"
+                            )
+                        ),
+                        row=row + 1,
+                        col=col + 1
+                    )
+
+                    clim_legend_shown = True
+
+                    # Include climatology in global y-axis limits
+                    clim_series = pd.Series(clim_values)
+
+                    if clim_series.notna().any():
+
+                        global_y_min = min(
+                            global_y_min,
+                            clim_series.min()
+                        )
+
+                        global_y_max = max(
+                            global_y_max,
+                            clim_series.max()
+                        )
+
+            # ------------------------------------------------------
+            # Update global y-axis limits using confidence bounds
+            # ------------------------------------------------------
+            global_y_min = min(
+                global_y_min,
+                lower[value_col].min()
+            )
+
+            global_y_max = max(
+                global_y_max,
+                upper[value_col].max()
+            )
 
             # ------------------------------------------------------
             # Zero reference line
@@ -796,18 +1014,20 @@ def plot_cnbs_forecast_interactive(
     # --------------------------------------------------------------
     # Consistent y-axis limits
     # --------------------------------------------------------------
-    for r in range(1, 5):
+    if global_y_min != float("inf"):
 
-        for c in range(1, 5):
+        for r in range(1, 5):
 
-            fig.update_yaxes(
-                range=[
-                    global_y_min - 10,
-                    global_y_max + 10
-                ],
-                row=r,
-                col=c
-            )
+            for c in range(1, 5):
+
+                fig.update_yaxes(
+                    range=[
+                        global_y_min - 10,
+                        global_y_max + 10
+                    ],
+                    row=r,
+                    col=c
+                )
 
     # --------------------------------------------------------------
     # Gridlines
@@ -852,7 +1072,7 @@ def plot_cnbs_forecast_interactive(
     if filename:
 
         os.makedirs(
-            os.path.dirname(filename),
+            os.path.dirname(filename) or ".",
             exist_ok=True
         )
 
