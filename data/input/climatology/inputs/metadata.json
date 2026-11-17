@@ -1,5 +1,5 @@
 {
-  "id": "d98d635f-12e9-4b6a-8ed6-8e0772a36740",
+  "id": "3893418c-baea-47f8-a876-c21282dc26ab",
   "var_list": [
     "superior_lake_precipitation_mo0",
     "superior_lake_precipitation_mo1",
@@ -243,10 +243,10 @@
     "ontario_land_air_temperature_mo9"
   ],
   "baseline_definition": {
-    "train_start": "2011-03-01",
+    "train_start": "2011-04-01",
     "train_end": "2025-12-31",
     "note": "inputs climatology fit on training period only"
   },
-  "calculation_date": "2026-11-13 09:41:40.801153",
+  "calculation_date": "2026-11-16 13:27:06.345674",
   "reduction": "monthly_mean"
 }

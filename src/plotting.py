@@ -28,9 +28,15 @@ import cartopy.feature as cfeature
 import cartopy.io.shapereader as shpreader
 import matplotlib.patches as mpatches
 from plotly.subplots import make_subplots
+import shapely
 import warnings
 
 warnings.filterwarnings("ignore", message="This axis already has a converter set")
+warnings.filterwarnings(
+    "ignore",
+    message="invalid value encountered in create_collection",
+    category=RuntimeWarning
+)
 
 def plot_cnbs_forecast(
         df,
@@ -538,7 +544,7 @@ def plot_cnbs_forecast_interactive(
     filename=None,
     units="mm",
     date_col="forecast_month",
-    climatology_file=None
+    climatology=None
 ):
     """
     Interactive Plotly plot for Great Lakes CNBS forecasts.
@@ -569,7 +575,7 @@ def plot_cnbs_forecast_interactive(
         - ["year", "month"]: Separate columns where year is YYYY
           and month is an integer from 1-12.
 
-    climatology_file : str or pd.DataFrame, optional
+    climatology : str or pd.DataFrame, optional
         Path to a climatology CSV file or a pandas DataFrame.
 
         The climatology DataFrame should have months 1-12 as its
@@ -666,16 +672,16 @@ def plot_cnbs_forecast_interactive(
     # --------------------------------------------------------------
     clim_df = None
 
-    if climatology_file is not None:
+    if climatology is not None:
 
-        if isinstance(climatology_file, pd.DataFrame):
+        if isinstance(climatology, pd.DataFrame):
 
-            clim_df = climatology_file.copy()
+            clim_df = climatology.copy()
 
         else:
 
             clim_df = pd.read_csv(
-                climatology_file,
+                climatology,
                 index_col="month"
             )
 
@@ -1079,6 +1085,646 @@ def plot_cnbs_forecast_interactive(
         fig.write_html(filename)
 
     fig.show()
+
+def plot_cumulative_cnbs_forecast(
+    df,
+    units="mm",
+    date_col="forecast_month",
+    filename=None,
+    climatology=None
+):
+    """
+    Static Matplotlib plot for cumulative Great Lakes CNBS forecasts.
+
+    Gray shading:
+        95% range (2.5th to 97.5th percentile) across all
+        cumulative ensemble members and models.
+
+    Colored lines:
+        Mean cumulative accumulation for each model.
+
+    Y-axis:
+        Columns 1-3 share the same limits.
+        Column 4 (NBS) has its own shared limits.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Long-format forecast dataframe. Must include:
+        cfs_run, model, lake, component, value [mm], value [cms].
+
+    filename : str, optional
+        Path to save the PNG.
+
+    units : str, default="mm"
+        Units to plot: "mm" or "cms".
+        For cms, monthly mean flow rates are converted to
+        monthly volumes (m3) before accumulation.
+
+    date_col : str or list, default="forecast_month"
+        Either "forecast_month" or ["year", "month"].
+
+    climatology : str or pd.DataFrame, optional
+        Path to a CSV climatology file or a DataFrame.
+        Expected columns: "{lake}_target_{component}".
+        Index must contain calendar months (1-12).
+    """
+
+    df = df.copy()
+
+    # --------------------------------------------------------------
+    # Load climatology
+    # --------------------------------------------------------------
+
+    clim_df = None
+
+    if climatology is not None:
+
+        if isinstance(climatology, pd.DataFrame):
+            clim_df = climatology.copy()
+
+        else:
+            clim_df = pd.read_csv(
+                climatology,
+                index_col="month"
+            )
+
+        if "month" in clim_df.columns:
+            clim_df = clim_df.set_index("month")
+
+        clim_df.index = clim_df.index.astype(int)
+
+        if not clim_df.index.isin(range(1, 13)).all():
+            raise ValueError(
+                "Climatology month index must contain values 1-12."
+            )
+
+        clim_df = clim_df.apply(
+            pd.to_numeric,
+            errors="coerce"
+        )
+
+    # --------------------------------------------------------------
+    # Validate required columns
+    # --------------------------------------------------------------
+
+    if date_col == "forecast_month":
+        required_date_cols = {"forecast_month"}
+
+    elif date_col == ["year", "month"]:
+        required_date_cols = {"year", "month"}
+
+    else:
+        raise ValueError(
+            "date_col must be either 'forecast_month' "
+            "or ['year', 'month']"
+        )
+
+    required_cols = (
+        required_date_cols
+        | {
+            "cfs_run",
+            "model",
+            "lake",
+            "component",
+            "value [mm]",
+            "value [cms]"
+        }
+    )
+
+    missing = required_cols - set(df.columns)
+
+    if missing:
+        raise ValueError(
+            f"Dataframe is missing required columns: {missing}"
+        )
+
+    # --------------------------------------------------------------
+    # Select value column and units
+    # --------------------------------------------------------------
+
+    if units.lower() == "mm":
+
+        value_col = "value [mm]"
+        units_label = "mm"
+        y_axis_label = "Cumulative accumulation (mm)"
+
+    elif units.lower() == "cms":
+
+        value_col = "value [cms]"
+        units_label = "m³"
+        y_axis_label = "Cumulative volume (m³)"
+
+    else:
+        raise ValueError(
+            "units must be either 'mm' or 'cms'"
+        )
+
+    # --------------------------------------------------------------
+    # Build datetime column
+    # --------------------------------------------------------------
+
+    if date_col == "forecast_month":
+
+        df["date"] = pd.to_datetime(
+            df["forecast_month"],
+            format="%Y-%m"
+        )
+
+    else:
+
+        df["date"] = pd.to_datetime(
+            dict(
+                year=df["year"].astype(int),
+                month=df["month"].astype(int),
+                day=1
+            )
+        )
+
+        df["forecast_month"] = (
+            df["date"].dt.strftime("%Y-%m")
+        )
+
+    # --------------------------------------------------------------
+    # Calculate monthly accumulation
+    # --------------------------------------------------------------
+
+    if units.lower() == "mm":
+
+        df["monthly_value"] = df[value_col]
+
+    else:
+
+        df["days_in_month"] = df["date"].dt.days_in_month
+
+        df["seconds_in_month"] = (
+            df["days_in_month"] * 86400
+        )
+
+        df["monthly_value"] = (
+            df[value_col] * df["seconds_in_month"]
+        )
+
+    # --------------------------------------------------------------
+    # Calculate cumulative accumulation for each ensemble
+    #    member, model, lake, and component
+    # --------------------------------------------------------------
+
+    df = df.sort_values(
+        [
+            "cfs_run",
+            "model",
+            "lake",
+            "component",
+            "date"
+        ]
+    )
+
+    df["cumulative"] = (
+        df.groupby(
+            [
+                "cfs_run",
+                "model",
+                "lake",
+                "component"
+            ]
+        )["monthly_value"]
+        .cumsum()
+    )
+
+    # --------------------------------------------------------------
+    # Create cumulative climatology
+    # --------------------------------------------------------------
+
+    if clim_df is not None:
+
+        clim_dates = pd.date_range(
+            start=df["date"].min(),
+            end=df["date"].max(),
+            freq="MS"
+        )
+
+    # --------------------------------------------------------------
+    # Unique models and colors
+    # --------------------------------------------------------------
+
+    models_info = df["model"].unique().tolist()
+
+    custom_colors = [
+        "blue",
+        "green",
+        "red",
+        "purple",
+        "orange",
+        "brown",
+        "pink",
+        "olive",
+        "cyan",
+        "magenta"
+    ]
+
+    if len(models_info) > len(custom_colors):
+        raise ValueError(
+            f"Number of models ({len(models_info)}) exceeds "
+            f"available colors ({len(custom_colors)})."
+        )
+
+    model_colors = {
+        model: custom_colors[i]
+        for i, model in enumerate(models_info)
+    }
+
+    # Explicit model colors
+    model_colors.update({
+        "GP": "blue",
+        "RF": "green",
+        "XGB": "red"
+    })
+
+    # --------------------------------------------------------------
+    # Lakes and components
+    # --------------------------------------------------------------
+
+    lakes = [
+        "superior",
+        "michigan-huron",
+        "erie",
+        "ontario"
+    ]
+
+    components = [
+        "precipitation",
+        "evaporation",
+        "runoff",
+        "nbs"
+    ]
+
+    component_titles = [
+        "Precipitation",
+        "Evaporation",
+        "Runoff",
+        "NBS"
+    ]
+
+    # --------------------------------------------------------------
+    # Create 4x4 subplot grid
+    # --------------------------------------------------------------
+
+    fig, axs = plt.subplots(
+        4,
+        4,
+        figsize=(18, 8),
+        sharex=True
+    )
+
+    shared_y_min = float("inf")
+    shared_y_max = float("-inf")
+
+    col4_y_min = float("inf")
+    col4_y_max = float("-inf")
+
+    # --------------------------------------------------------------
+    # Plot each lake/component combination
+    # --------------------------------------------------------------
+
+    for row, lake in enumerate(lakes):
+
+        for col, comp in enumerate(components):
+
+            ax = axs[row, col]
+
+            lake_df = df[
+                (df["lake"] == lake) &
+                (df["component"] == comp)
+            ].copy()
+
+            if lake_df.empty:
+                continue
+
+            # ------------------------------------------------------
+            # Calculate overall 95% spread across all models/runs
+            # ------------------------------------------------------
+
+            lower = (
+                lake_df
+                .groupby("date")["cumulative"]
+                .quantile(0.025)
+                .reset_index(name="lower")
+            )
+
+            upper = (
+                lake_df
+                .groupby("date")["cumulative"]
+                .quantile(0.975)
+                .reset_index(name="upper")
+            )
+
+            # ------------------------------------------------------
+            # Plot individual model mean accumulations
+            # ------------------------------------------------------
+
+            for model_name in models_info:
+
+                model_df = lake_df[
+                    lake_df["model"] == model_name
+                ]
+
+                if model_df.empty:
+                    continue
+
+                mean_df = (
+                    model_df
+                    .groupby("date")["cumulative"]
+                    .mean()
+                    .reset_index()
+                )
+
+                ax.plot(
+                    mean_df["date"],
+                    mean_df["cumulative"],
+                    marker="o",
+                    markersize=3,
+                    color=model_colors[model_name],
+                    label=model_name
+                )
+
+            # ------------------------------------------------------
+            # Plot 95% confidence interval
+            # ------------------------------------------------------
+
+            ax.fill_between(
+                lower["date"],
+                lower["lower"],
+                upper["upper"],
+                color="gray",
+                alpha=0.2,
+                label="95%"
+            )
+
+            # ------------------------------------------------------
+            # Plot cumulative climatology
+            # ------------------------------------------------------
+
+            if clim_df is not None:
+
+                clim_col = f"{lake}_target_{comp}"
+
+                if clim_col in clim_df.columns:
+
+                    # Match forecast dates to calendar months
+                    clim_months = clim_dates.month
+
+                    clim_monthly = clim_df[clim_col].reindex(
+                        clim_months
+                    ).to_numpy()
+
+                    if units.lower() == "cms":
+
+                        clim_monthly = (
+                            clim_monthly
+                            * clim_dates.days_in_month
+                            * 86400
+                        )
+
+                    clim_cumulative = np.cumsum(
+                        clim_monthly
+                    )
+
+                    ax.plot(
+                        clim_dates,
+                        clim_cumulative,
+                        color="black",
+                        linestyle="--",
+                        linewidth=2,
+                        label="Climatology",
+                        zorder=5
+                    )
+
+            # ------------------------------------------------------
+            # Zero reference line
+            # ------------------------------------------------------
+
+            ax.axhline(
+                0,
+                color="black",
+                linestyle="--",
+                linewidth=1
+            )
+
+            # ------------------------------------------------------
+            # Gridlines
+            # ------------------------------------------------------
+
+            ax.grid(
+                True,
+                linestyle="--",
+                alpha=0.6
+            )
+
+            # ------------------------------------------------------
+            # Track y limits, including climatology
+            # ------------------------------------------------------
+
+            current_y_min = min(
+                lower["lower"].min(),
+                upper["upper"].min()
+            )
+
+            current_y_max = max(
+                lower["lower"].max(),
+                upper["upper"].max()
+            )
+
+            if clim_df is not None:
+
+                clim_col = f"{lake}_target_{comp}"
+
+                if clim_col in clim_df.columns:
+
+                    current_clim = clim_df[clim_col].dropna()
+
+                    if not current_clim.empty:
+
+                        if units.lower() == "cms":
+
+                            current_clim = (
+                                current_clim
+                                * 31 * 86400
+                            )
+
+                        current_clim_cumulative = (
+                            current_clim.cumsum()
+                        )
+
+                        current_y_min = min(
+                            current_y_min,
+                            current_clim_cumulative.min()
+                        )
+
+                        current_y_max = max(
+                            current_y_max,
+                            current_clim_cumulative.max()
+                        )
+
+            if col < 3:
+
+                shared_y_min = min(
+                    shared_y_min,
+                    current_y_min
+                )
+
+                shared_y_max = max(
+                    shared_y_max,
+                    current_y_max
+                )
+
+            else:
+
+                col4_y_min = min(
+                    col4_y_min,
+                    current_y_min
+                )
+
+                col4_y_max = max(
+                    col4_y_max,
+                    current_y_max
+                )
+
+            # ------------------------------------------------------
+            # Column titles
+            # ------------------------------------------------------
+
+            if row == 0:
+
+                ax.set_title(
+                    component_titles[col],
+                    fontsize=14
+                )
+
+            # ------------------------------------------------------
+            # X-axis formatting
+            # ------------------------------------------------------
+
+            if row == 3:
+
+                ax.xaxis.set_major_formatter(
+                    mdates.DateFormatter("%m-%Y")
+                )
+
+                ax.tick_params(
+                    axis="x",
+                    rotation=45
+                )
+
+                for label in ax.get_xticklabels():
+                    label.set_horizontalalignment("right")
+
+            else:
+
+                ax.tick_params(
+                    axis="x",
+                    labelbottom=False
+                )
+
+            # ------------------------------------------------------
+            # Y-axis formatting
+            # ------------------------------------------------------
+
+            if col == 0:
+
+                ax.set_ylabel(
+                    lake.capitalize(),
+                    fontsize=14
+                )
+
+            elif col == 3:
+
+                # Keep NBS tick labels visible
+                ax.tick_params(
+                    axis="y",
+                    labelleft=True
+                )
+
+            else:
+
+                ax.tick_params(
+                    axis="y",
+                    labelleft=False
+                )
+
+    # --------------------------------------------------------------
+    # Apply y-axis limits
+    # --------------------------------------------------------------
+
+    for row_idx in range(4):
+
+        for col_idx in range(4):
+
+            ax = axs[row_idx, col_idx]
+
+            if col_idx < 3:
+
+                if shared_y_min != float("inf"):
+
+                    ax.set_ylim(
+                        shared_y_min - 10,
+                        shared_y_max + 10
+                    )
+
+            else:
+
+                if col4_y_min != float("inf"):
+
+                    ax.set_ylim(
+                        col4_y_min - 10,
+                        col4_y_max + 10
+                    )
+
+            ax.set_xlim(
+                df["date"].min(),
+                df["date"].max()
+            )
+
+    # --------------------------------------------------------------
+    # Figure title
+    # --------------------------------------------------------------
+
+    fig.suptitle(
+        f"Great Lakes 12-Month Cumulative CNBS Forecast [{units_label}]",
+        fontsize=16
+    )
+
+    # --------------------------------------------------------------
+    # Legend
+    # --------------------------------------------------------------
+
+    axs[0, 3].legend(
+        loc="lower left",
+        bbox_to_anchor=(1, 0.04),
+        fontsize=12
+    )
+
+    plt.tight_layout()
+
+    # --------------------------------------------------------------
+    # Save
+    # --------------------------------------------------------------
+
+    if filename:
+
+        output_dir = os.path.dirname(filename)
+
+        if output_dir:
+            os.makedirs(output_dir, exist_ok=True)
+
+        plt.savefig(
+            filename,
+            bbox_inches="tight"
+        )
+
+    plt.show()
+
+    return fig, axs
 
 def plot_nbs_forecast(
     df_filtered,
@@ -1620,6 +2266,17 @@ def plot_cep_spatial(
     )
 
     lake_records = list(shpreader.Reader(lake_shp).records())
+
+    lake_geometries = []
+
+    for record in lake_records:
+        geom = record.geometry
+
+        if not geom.is_valid:
+            geom = shapely.make_valid(geom)
+
+        if not geom.is_empty:
+            lake_geometries.append(geom)
 
     # Match Natural Earth names to your lake names
     lake_name_map = {
