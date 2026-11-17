@@ -171,8 +171,8 @@ def get_files(directory, affix, identifier):
 
 def format_cep_mean_forecast(
     df_cep,
-    output_file=None,
-    models=None
+    models=None,
+    output_file=None
 ):
     """
     Format CEP forecast dataframe for reporting.
@@ -196,7 +196,7 @@ def format_cep_mean_forecast(
     """
 
     if models is None:
-        models = ["RF", "GP", "XGB", "NN"]
+        models = ["RF", "GP", "XGB"]
 
     # ---------------------------------------------------------
     # Start with copy
