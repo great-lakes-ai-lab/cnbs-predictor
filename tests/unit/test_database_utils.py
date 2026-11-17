@@ -137,109 +137,223 @@ class TestLoadUnfiltered:
         out = _write(tmp_path, df, table="odd_table").load()
         assert len(out) == 1
 
+class TestLoadFiltered:
+    """load() with filter_by and start_date applies date filtering."""
 
-# ===========================================================================
-# load(start_date=...) — SQL-side filtering
-# ===========================================================================
-class TestLoadFilteredYearMonth:
-    """
-    On the ``year``/``month`` layout, the filter becomes
-    ``WHERE year > ? OR (year = ? AND month >= ?)``.
-    """
+    def test_filters_by_year_month(self, tmp_path):
+        """Filters using separate year and month columns."""
+        df = pd.DataFrame({
+            "year": [2025, 2025, 2026, 2026],
+            "month": [11, 12, 1, 5],
+            "value": [1, 2, 3, 4]
+        })
 
-    def test_drops_earlier_months_keeps_later(self, tmp_path):
-        """Rows before the threshold month are excluded; the rest are kept."""
-        out = _write(tmp_path, _year_month_frame()).load(start_date="07-2026")
-        kept = set(zip(out["year"], out["month"]))
-        assert kept == {(2026, 7), (2026, 8), (2026, 12), (2027, 1), (2027, 2)}
+        out = _write(tmp_path, df).load(
+            filter_by=["year", "month"],
+            start_date="2026-01"
+        )
 
-    def test_threshold_month_is_inclusive(self, tmp_path):
-        """The start month itself is retained (>=, not >)."""
-        out = _write(tmp_path, _year_month_frame()).load(start_date="07-2026")
-        assert (2026, 7) in set(zip(out["year"], out["month"]))
+        assert len(out) == 2
+        assert out["year"].tolist() == [2026, 2026]
+        assert out["month"].tolist() == [1, 5]
 
-    def test_year_rollover_not_compared_by_month_alone(self, tmp_path):
-        """
-        January 2027 (month=1) must survive a July 2026 threshold. A naive
-        ``month >= 7`` predicate would wrongly drop it — this pins the
-        (year, month) pair comparison.
-        """
-        out = _write(tmp_path, _year_month_frame()).load(start_date="07-2026")
-        assert (2027, 1) in set(zip(out["year"], out["month"]))
+    def test_filters_by_forecast_month(self, tmp_path):
+        """Filters MM-YYYY forecast_month values chronologically."""
+        df = pd.DataFrame({
+            "forecast_month": [
+                "2025-11",
+                "2025-12",
+                "2026-01",
+                "2026-05"
+            ],
+            "value": [1, 2, 3, 4]
+        })
 
-    @pytest.mark.parametrize("start_date", ["07-2026", "2026-07", "2026-07-01"])
-    def test_accepts_the_date_formats_in_use(self, tmp_path, start_date):
-        """
-        ``get_first_forecast_month()`` returns 'MM-YYYY'; 'YYYY-MM' and full
-        dates are also accepted since parsing goes through pandas.Period.
-        """
-        out = _write(tmp_path, _year_month_frame()).load(start_date=start_date)
-        assert len(out) == 5
+        out = _write(tmp_path, df).load(
+            filter_by="forecast_month",
+            start_date="2026-01"
+        )
 
-    def test_threshold_after_all_data_returns_empty(self, tmp_path):
-        """A threshold past every row yields an empty frame, not an error."""
-        out = _write(tmp_path, _year_month_frame()).load(start_date="01-2030")
+        assert len(out) == 2
+        assert out["forecast_month"].tolist() == [
+            "2026-01", "2026-05"
+        ]
+
+    def test_filters_by_cfs_run(self, tmp_path):
+        """Filters YYYYMMDDHH cfs_run values."""
+        df = pd.DataFrame({
+            "cfs_run": [
+                "2025120100",
+                "2026010100",
+                "2026050100",
+                "2026060100"
+            ],
+            "value": [1, 2, 3, 4]
+        })
+
+        out = _write(tmp_path, df).load(
+            filter_by="cfs_run",
+            start_date="2026-05"
+        )
+
+        assert len(out) == 2
+        assert out["cfs_run"].tolist() == [
+            "2026050100", "2026060100"
+        ]
+
+    def test_start_date_requires_filter_by(self, tmp_path):
+        """start_date without filter_by raises an error."""
+        database = _write(tmp_path, _year_month_frame())
+
+        with pytest.raises(ValueError, match="filter_by"):
+            database.load(start_date="2026-01")
+
+    def test_invalid_filter_column_reports_available_columns(self, tmp_path):
+        """Invalid columns produce a useful error."""
+        database = _write(tmp_path, _year_month_frame())
+
+        with pytest.raises(ValueError, match="not found in table"):
+            database.load(
+                filter_by="invalid_column",
+                start_date="2026-01"
+            )
+
+    def test_unsupported_filter_by_raises_error(self, tmp_path):
+        """Existing but unsupported date columns raise an error."""
+        df = pd.DataFrame({
+            "value": [1, 2, 3]
+        })
+
+        database = _write(tmp_path, df)
+
+        with pytest.raises(ValueError, match="Unsupported filter_by"):
+            database.load(
+                filter_by="value",
+                start_date="2026-01"
+            )
+
+    def test_error_includes_first_column_value(self, tmp_path):
+        """Malformed forecast_month values report the first value."""
+        df = pd.DataFrame({
+            "forecast_month": ["01/2026", "02/2026"],
+            "value": [1, 2]
+        })
+
+        database = _write(tmp_path, df)
+
+        with pytest.raises(ValueError) as exc:
+            database.load(
+                filter_by="forecast_month",
+                start_date="2026-01"
+            )
+
+        assert "01/2026" in str(exc.value)
+        assert "forecast_month" in str(exc.value)
+        assert "YYYY-MM" in str(exc.value)
+
+    def test_error_includes_first_cfs_run_value(self, tmp_path):
+        """Malformed cfs_run values report the first value."""
+        df = pd.DataFrame({
+            "cfs_run": ["2026-05-01", "2026-06-01"],
+            "value": [1, 2]
+        })
+
+        database = _write(tmp_path, df)
+
+        with pytest.raises(ValueError) as exc:
+            database.load(
+                filter_by="cfs_run",
+                start_date="2026-05"
+            )
+
+        assert "2026-05-01" in str(exc.value)
+        assert "cfs_run" in str(exc.value)
+        assert "YYYYMMDDHH" in str(exc.value)
+
+    def test_error_includes_first_year_month_values(self, tmp_path):
+        """Invalid year/month values report the first available values."""
+        df = pd.DataFrame({
+            "year": [2026, 2026],
+            "month": [13, 14],
+            "value": [1, 2]
+        })
+
+        database = _write(tmp_path, df)
+
+        with pytest.raises(ValueError) as exc:
+            database.load(
+                filter_by=["year", "month"],
+                start_date="2026-01"
+            )
+
+        assert "year" in str(exc.value)
+        assert "month" in str(exc.value)
+        assert "13" in str(exc.value)
+
+    def test_invalid_start_date_raises_error(self, tmp_path):
+        """Invalid start_date formats raise a useful error."""
+        df = pd.DataFrame({
+            "forecast_month": ["2026-01", "2026-02"],
+            "value": [1, 2]
+        })
+
+        database = _write(tmp_path, df)
+
+        with pytest.raises(ValueError, match="Invalid start_date"):
+            database.load(
+                filter_by="forecast_month",
+                start_date="not-a-date"
+            )
+
+    def test_filters_exclude_rows_before_start_date(self, tmp_path):
+        """The starting month itself is included."""
+        df = pd.DataFrame({
+            "forecast_month": [
+                "2025-12",
+                "2026-01",
+                "2026-02",
+                "2026-03"
+            ],
+            "value": [1, 2, 3, 4]
+        })
+
+        out = _write(tmp_path, df).load(
+            filter_by="forecast_month",
+            start_date="2026-02"
+        )
+
+        assert out["forecast_month"].tolist() == [
+            "2026-02", "2026-03"
+        ]
+
+    def test_empty_table_returns_empty_dataframe(self, tmp_path):
+        """An empty table can still be filtered without errors."""
+        df = pd.DataFrame({
+            "forecast_month": pd.Series(dtype=str),
+            "value": pd.Series(dtype=float)
+        })
+
+        out = _write(tmp_path, df).load(
+            filter_by="forecast_month",
+            start_date="2026-01"
+        )
+
         assert out.empty
-
-    def test_threshold_before_all_data_returns_everything(self, tmp_path):
-        """A threshold before every row keeps the whole table."""
-        df = _year_month_frame()
-        out = _write(tmp_path, df).load(start_date="01-2000")
-        assert len(out) == len(df)
-
-
-class TestLoadFilteredForecastMonth:
-    """
-    On the ``forecast_month`` layout the filter is a string comparison, which
-    is only correct because the column is written zero-padded ('2026-07').
-    """
-
-    def test_drops_earlier_months_keeps_later(self, tmp_path):
-        """Rows before the threshold are excluded."""
-        out = _write(tmp_path, _forecast_month_frame()).load(start_date="07-2026")
-        assert set(out["forecast_month"]) == {"2026-07", "2026-10", "2027-01"}
-
-    def test_single_digit_month_sorts_correctly(self, tmp_path):
-        """
-        '2026-10' >= '2026-07' must hold as a string compare. Unpadded values
-        ('2026-7') would break this ordering, so this guards the zero-padding
-        assumption the query relies on.
-        """
-        out = _write(tmp_path, _forecast_month_frame()).load(start_date="07-2026")
-        assert "2026-10" in set(out["forecast_month"])
-
-
-class TestLoadFilteredErrors:
-    """``start_date`` requires a recognizable date layout."""
-
-    def test_raises_when_no_date_columns(self, tmp_path):
-        """A table with neither layout cannot be filtered."""
-        df = pd.DataFrame({"cfs_run": ["2026050100"], "value": [1.0]})
-        db = _write(tmp_path, df, table="odd_table")
-        with pytest.raises(ValueError, match="forecast_month"):
-            db.load(start_date="07-2026")
-
-    def test_start_date_is_bound_as_a_parameter(self, tmp_path):
-        """
-        start_date reaches SQLite as a bound parameter, not interpolated SQL,
-        so a string with quotes cannot alter the query. pandas.Period rejects
-        it before it ever gets that far.
-        """
-        db = _write(tmp_path, _year_month_frame())
-        with pytest.raises(Exception):
-            db.load(start_date="2026-07'; DROP TABLE cnbs_forecast; --")
-        # The table is still intact either way.
-        assert len(db.load()) == len(_year_month_frame())
-
+        assert list(out.columns) == ["forecast_month", "value"]
 
 # ===========================================================================
 # Equivalence: SQL pushdown must match filtering in pandas
 # ===========================================================================
+
+
 class TestPushdownMatchesPandasFilter:
     """
-    ``load(start_date=X)`` must return exactly what
-    ``ForecastTransformer(load()).filter(X)`` returns. This is the property
-    that lets notebook 3 push the filter into SQL without changing outputs.
+    ``load(start_date=X, filter_by=Y)`` must return exactly what
+    ``ForecastTransformer(load()).filter(X)`` returns.
+
+    The database can contain either:
+      - cfs_run, year, month
+      - cfs_run, forecast_month
     """
 
     @staticmethod
@@ -249,9 +363,7 @@ class TestPushdownMatchesPandasFilter:
 
         ``check_dtype=False`` because an empty SQL result comes back with
         ``object`` columns, while filtering a populated frame down to nothing
-        in pandas preserves the original dtypes. That divergence exists only
-        for empty results and reflects how ``read_sql`` types a zero-row
-        result, not a difference in what gets selected.
+        in pandas preserves the original dtypes.
         """
         pd.testing.assert_frame_equal(
             pushed.sort_values(key).reset_index(drop=True),
@@ -259,57 +371,91 @@ class TestPushdownMatchesPandasFilter:
             check_dtype=False,
         )
 
-    @pytest.mark.parametrize("start_date", ["05-2026", "07-2026", "01-2027", "01-2030"])
+    @pytest.mark.parametrize(
+        "start_date",
+        ["05-2026", "07-2026", "01-2027", "01-2030"],
+    )
     def test_year_month_layout_matches(self, tmp_path, start_date):
-        """Equivalence across thresholds below, inside, and past the data range."""
+        """Equivalence for a table containing cfs_run, year, and month."""
         db = _write(tmp_path, _year_month_frame())
+
         self._assert_same(
-            db.load(start_date=start_date),
+            db.load(
+                start_date=start_date,
+                filter_by=["year", "month"],
+            ),
             ForecastTransformer(db.load()).filter(start_date),
-            ["year", "month"],
+            ["cfs_run", "year", "month"],
         )
 
-    @pytest.mark.parametrize("start_date", ["05-2026", "07-2026", "01-2027"])
+    @pytest.mark.parametrize(
+        "start_date",
+        ["05-2026", "07-2026", "01-2027"],
+    )
     def test_forecast_month_layout_matches(self, tmp_path, start_date):
-        """Same equivalence on the forecast_month layout."""
+        """Equivalence for a table containing cfs_run and forecast_month."""
         db = _write(tmp_path, _forecast_month_frame())
+
         self._assert_same(
-            db.load(start_date=start_date),
+            db.load(
+                start_date=start_date,
+                filter_by="forecast_month",
+            ),
             ForecastTransformer(db.load()).filter(start_date),
-            ["forecast_month"],
+            ["cfs_run", "forecast_month"],
         )
 
     def test_ensemble_members_all_survive(self, tmp_path):
         """
-        Every ensemble member of a kept month is returned — the filter selects
-        whole months, it does not collapse rows that share a (year, month).
+        Every ensemble member of a kept month is returned.
+
+        Filtering selects whole forecast months; it must not collapse rows
+        sharing the same year and month.
         """
         db = _write(tmp_path, _ensemble_frame())
-        out = db.load(start_date="07-2026")
+        out = db.load(
+            start_date="07-2026",
+            filter_by=["year", "month"],
+        )
 
         per_month = out.groupby(["year", "month"]).size().to_dict()
-        assert per_month == {(2026, 7): 24, (2027, 1): 24}
+        assert per_month == {
+            (2026, 7): 24,
+            (2027, 1): 24,
+        }
 
     def test_ensemble_layout_matches_pandas_filter(self, tmp_path):
         """Equivalence holds on ensemble-shaped data, duplicates included."""
         db = _write(tmp_path, _ensemble_frame())
+
         self._assert_same(
-            db.load(start_date="07-2026"),
+            db.load(
+                start_date="07-2026",
+                filter_by=["year", "month"],
+            ),
             ForecastTransformer(db.load()).filter("07-2026"),
-            ["cfs_run", "year", "month", "model", "lake", "component"],
+            [
+                "cfs_run",
+                "year",
+                "month",
+                "model",
+                "lake",
+                "component",
+            ],
         )
 
     def test_dtypes_match_when_rows_survive(self, tmp_path):
-        """
-        For any non-empty result the two paths agree on dtypes too, so the
-        relaxation above is genuinely confined to the empty case.
-        """
+        """For non-empty results, both paths should agree on dtypes."""
         db = _write(tmp_path, _year_month_frame())
-        pushed = db.load(start_date="07-2026")
+
+        pushed = db.load(
+            start_date="07-2026",
+            filter_by=["year", "month"],
+        )
         in_pandas = ForecastTransformer(db.load()).filter("07-2026")
+
         assert not pushed.empty
         assert list(pushed.dtypes) == list(in_pandas.dtypes)
-
 
 # ===========================================================================
 # create_indexes()
