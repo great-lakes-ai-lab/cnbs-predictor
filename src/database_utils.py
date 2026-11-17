@@ -90,45 +90,171 @@ class CFSDatabase:
         """
         columns = {row[1] for row in conn.execute(f'PRAGMA table_info({self.table})')}
         return {"year", "month"} <= columns, "forecast_month" in columns
-
-    def load(self, start_date=None):
+ 
+    def load(self, filter_by=None, start_date=None):
         """
-        Load the table into a DataFrame, optionally filtering in SQL.
+        Load the table into a DataFrame, optionally filtering by a starting date.
+
+        Parameters
+        ----------
+        filter_by : str, list, or None
+            Column(s) used for date filtering:
+                - 'cfs_run'       : YYYYMMDDHH
+                - ['year', 'month']: Separate year and month columns
+                - 'forecast_month': YYYY-MM
+
+        start_date : str or None
+            Starting forecast month. Rows before this month are excluded.
+
+        Returns
+        -------
+        pd.DataFrame
         """
         conn = sqlite3.connect(self.database)
 
         try:
-            query = f'SELECT * FROM {self.table}'
-            params = None
+            query = f'SELECT * FROM "{self.table}"'
+            data = pd.read_sql(query, conn)
 
-            if start_date is not None:
+            # No filtering requested
+            if start_date is None:
+                return data
+
+            if filter_by is None:
+                raise ValueError(
+                    "A filter_by column must be supplied when start_date "
+                    "is specified."
+                )
+
+            if isinstance(filter_by, str):
+                filter_by = [filter_by]
+
+            # Validate requested columns
+            missing = [col for col in filter_by if col not in data.columns]
+
+            if missing:
+                raise ValueError(
+                    f"Columns {missing} not found in table '{self.table}'. "
+                    f"Available columns: {list(data.columns)}"
+                )
+
+            # Validate supported filter combinations
+            if set(filter_by) == {"year", "month"} and len(filter_by) == 2:
+                filter_type = "year_month"
+            elif filter_by == ["forecast_month"]:
+                filter_type = "forecast_month"
+            elif filter_by == ["cfs_run"]:
+                filter_type = "cfs_run"
+            else:
+                raise ValueError(
+                    f"Unsupported filter_by: {filter_by}. "
+                    "Use 'cfs_run', ['year', 'month'], or 'forecast_month'."
+                )
+
+            # Convert requested start date to monthly period
+            try:
                 period = pd.Period(start_date, freq="M")
-                has_year_month, has_forecast_month = self._date_columns(conn)
+            except Exception as e:
+                raise ValueError(
+                    f"Invalid start_date '{start_date}'. "
+                    "Expected a date such as '2026-05'."
+                ) from e
 
-                if has_year_month:
-                    query += ' WHERE year > ? OR (year = ? AND month >= ?)'
-                    params = (period.year, period.year, period.month)
+            # Helper for reporting unexpected column formats
+            def format_error(columns, reason):
+                if isinstance(columns, str):
+                    columns = [columns]
 
-                elif has_forecast_month:
-                    query += ' WHERE forecast_month >= ?'
-                    params = (str(period),)
+                first_values = {}
 
-                else:
-                    raise ValueError(
-                        f"Cannot filter table '{self.table}' by start_date: it "
-                        "must contain either 'forecast_month' or "
-                        "('year','month') columns."
+                for col in columns:
+                    first_values[col] = (
+                        data[col].dropna().iloc[0]
+                        if data[col].notna().any()
+                        else None
                     )
 
-            # Sort by forecast initialization, then forecast year/month
-            query += ' ORDER BY cfs_run, year, month'
+                return ValueError(
+                    f"Unable to filter table '{self.table}' using "
+                    f"filter_by={filter_by}.\n"
+                    f"Column(s) {columns} contain unexpected values.\n"
+                    f"First available value(s): {first_values}\n"
+                    f"Expected format: {reason}"
+                )
 
-            data = pd.read_sql(query, conn, params=params)
+            # Filter by year and month
+            if filter_type == "year_month":
+                try:
+                    years = pd.to_numeric(data["year"], errors="raise")
+                    months = pd.to_numeric(data["month"], errors="raise")
+
+                    if (
+                        years.isna().any()
+                        or months.isna().any()
+                        or not months.between(1, 12).all()
+                    ):
+                        raise ValueError("Invalid year/month values")
+
+                    date_values = years * 12 + months
+
+                    start_value = period.year * 12 + period.month
+
+                    data = data.loc[date_values >= start_value]
+
+                except Exception as e:
+                    raise format_error(
+                        ["year", "month"],
+                        "numeric year and month values (month 1-12)"
+                    ) from e
+
+            # Filter by forecast_month (MM-YYYY)
+            elif filter_type == "forecast_month":
+                try:
+                    dates = pd.to_datetime(
+                        data["forecast_month"].astype(str),
+                        format="%Y-%m",
+                        errors="coerce"
+                    )
+
+                    if dates.isna().any():
+                        raise ValueError("Invalid forecast_month values")
+
+                    data = data.loc[
+                        dates.dt.to_period("M") >= period
+                    ]
+
+                except Exception as e:
+                    raise format_error(
+                        "forecast_month",
+                        "YYYY-MM (example: '2026-05')"
+                    ) from e
+
+            # Filter by cfs_run (YYYYMMDDHH)
+            elif filter_type == "cfs_run":
+                try:
+                    dates = pd.to_datetime(
+                        data["cfs_run"].astype(str),
+                        format="%Y%m%d%H",
+                        errors="coerce"
+                    )
+
+                    if dates.isna().any():
+                        raise ValueError("Invalid cfs_run values")
+
+                    data = data.loc[
+                        dates.dt.to_period("M") >= period
+                    ]
+
+                except Exception as e:
+                    raise format_error(
+                        "cfs_run",
+                        "YYYYMMDDHH (example: '2026050100')"
+                    ) from e
+
+            return data
 
         finally:
             conn.close()
-
-        return data
 
     def create_indexes(self):
         """
