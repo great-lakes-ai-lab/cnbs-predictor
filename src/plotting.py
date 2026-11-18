@@ -240,6 +240,13 @@ def plot_cnbs_forecast(
         "NBS"
     ]
 
+    lake_labels = {
+                "superior": "Superior",
+                "michigan-huron": "Mich-Huron",
+                "erie": "Erie",
+                "ontario": "Ontario",
+            }
+
     # --------------------------------------------------------------
     # Create 4x4 subplot grid
     # --------------------------------------------------------------
@@ -440,7 +447,7 @@ def plot_cnbs_forecast(
 
                 ax.set_title(
                     component_titles[col],
-                    fontsize=14
+                    fontsize=16
                 )
 
             # ------------------------------------------------------
@@ -468,10 +475,7 @@ def plot_cnbs_forecast(
             # ------------------------------------------------------
             if col == 0:
 
-                ax.set_ylabel(
-                    lake.capitalize(),
-                    fontsize=14
-                )
+                ax.set_ylabel(lake_labels[lake], fontsize=16)
 
             else:
                 ax.set_yticklabels([])
@@ -511,13 +515,13 @@ def plot_cnbs_forecast(
     # --------------------------------------------------------------
     fig.suptitle(
         f"Great Lakes 12-Month CNBS Forecast [{units_label}]",
-        fontsize=16
+        fontsize=18
     )
 
     axs[0, 3].legend(
         loc="lower left",
         bbox_to_anchor=(1, 0.04),
-        fontsize=12
+        fontsize=14
     )
 
     plt.tight_layout()
@@ -755,6 +759,13 @@ def plot_cnbs_forecast_interactive(
         "runoff",
         "nbs"
     ]
+
+    lake_labels = {
+                "superior": "Superior",
+                "michigan-huron": "Mich-Huron",
+                "erie": "Erie",
+                "ontario": "Ontario",
+            }
 
     # --------------------------------------------------------------
     # Create 4x4 subplot grid
@@ -1366,6 +1377,13 @@ def plot_cumulative_cnbs_forecast(
         "NBS"
     ]
 
+    lake_labels = {
+                "superior": "Superior",
+                "michigan-huron": "Mich-Huron",
+                "erie": "Erie",
+                "ontario": "Ontario",
+            }
+
     # --------------------------------------------------------------
     # Create 4x4 subplot grid
     # --------------------------------------------------------------
@@ -1598,7 +1616,7 @@ def plot_cumulative_cnbs_forecast(
 
                 ax.set_title(
                     component_titles[col],
-                    fontsize=14
+                    fontsize=16
                 )
 
             # ------------------------------------------------------
@@ -1632,10 +1650,7 @@ def plot_cumulative_cnbs_forecast(
 
             if col == 0:
 
-                ax.set_ylabel(
-                    lake.capitalize(),
-                    fontsize=14
-                )
+                ax.set_ylabel(lake_labels[lake], fontsize=16)
 
             elif col == 3:
 
@@ -1691,7 +1706,7 @@ def plot_cumulative_cnbs_forecast(
 
     fig.suptitle(
         f"Great Lakes 12-Month Cumulative CNBS Forecast [{units_label}]",
-        fontsize=16
+        fontsize=18
     )
 
     # --------------------------------------------------------------
@@ -1701,7 +1716,7 @@ def plot_cumulative_cnbs_forecast(
     axs[0, 3].legend(
         loc="lower left",
         bbox_to_anchor=(1, 0.04),
-        fontsize=12
+        fontsize=14
     )
 
     plt.tight_layout()
@@ -1851,6 +1866,13 @@ def plot_nbs_forecast(
         "ontario"
     ]
 
+    lake_labels = {
+            "superior": "Superior",
+            "michigan-huron": "Mich-Huron",
+            "erie": "Erie",
+            "ontario": "Ontario",
+        }
+
     # ---------------------------------------------------------
     # Begin plotting
     # ---------------------------------------------------------
@@ -1863,7 +1885,7 @@ def plot_nbs_forecast(
 
     fig.suptitle(
         f"Great Lakes 12-Month NBS [{units_label}] Forecast",
-        fontsize=16,
+        fontsize=18,
         x=0.2,
         ha="left"
     )
@@ -2025,10 +2047,7 @@ def plot_nbs_forecast(
         else:
             ax.set_xticklabels([])
 
-        ax.set_ylabel(
-            lake.title(),
-            fontsize=14
-        )
+        ax.set_ylabel(lake_labels[lake], fontsize=16)
 
     # ---------------------------------------------------------
     # Apply common y-axis
@@ -2051,7 +2070,7 @@ def plot_nbs_forecast(
     axs[0, 0].legend(
         loc="lower left",
         bbox_to_anchor=(1, 0.3),
-        fontsize=12
+        fontsize=14
     )
 
     for r in range(1, len(lakes)):
@@ -2137,7 +2156,7 @@ def plot_cep_timeseries(df_cep, filename=None):
 
     fig.suptitle(
         "Great Lakes 12-Month Mean Climatology Exceedance Probability (NBS)",
-        fontsize=16,
+        fontsize=18,
         x=0.17,
         ha="left"
     )
@@ -2177,7 +2196,7 @@ def plot_cep_timeseries(df_cep, filename=None):
         ax.grid(True, linestyle="--", alpha=0.6)
         ax.set_ylim(0, 1)
         ax.set_xlim(df["forecast_month"].min(), df["forecast_month"].max())
-        ax.set_ylabel(lake_labels[lake], fontsize=14)
+        ax.set_ylabel(lake_labels[lake], fontsize=16)
 
         if row == len(lakes) - 1:
             ax.xaxis.set_major_formatter(mdates.DateFormatter("%m-%Y"))
@@ -2191,7 +2210,7 @@ def plot_cep_timeseries(df_cep, filename=None):
     axs[0, 0].legend(
         loc="lower left",
         bbox_to_anchor=(1, 0.525),
-        fontsize=12
+        fontsize=14
     )
 
     plt.tight_layout()
@@ -2387,7 +2406,7 @@ def plot_cep_spatial(
             transform=ax.transAxes,
             ha="right",
             va="top",
-            fontsize=13,
+            fontsize=14,
             color="black",
             zorder=2000
 )
@@ -2429,7 +2448,7 @@ def plot_cep_spatial(
     cbar.set_ticks(ticks)
     cbar.set_ticklabels(["0", "0.25", "0.5", "0.75", "1"])
 
-    fig.suptitle(plot_title, fontsize=16, fontweight="bold")
+    fig.suptitle(plot_title, fontsize=18, fontweight="bold")
 
     if filename:
         folder = os.path.dirname(filename)
