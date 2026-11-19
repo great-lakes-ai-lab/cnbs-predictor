@@ -30,7 +30,7 @@
 import os
 import sys
 # Add the path to the src directory (two levels up)
-sys.path.append(os.path.abspath('../../'))
+sys.path.append(os.path.abspath('../../../'))
 from src.data_downloader import CFSDownloader
 from src.data_processor import CFSProcessor
 from src.database_utils import CFSDatabase
@@ -76,6 +76,7 @@ download_dir = input_dir + 'cfs/'
 
 # Path to the CFS forecast database
 database = local_path + 'cfs_forecast_data.db'
+#database = input_dir + 'cfs/cfs_forecast_data.db'
 table = 'cfs_forecast_data'
 
 # Data source: specify either 'aws' or 'ncei'
@@ -96,8 +97,8 @@ delete_files = 'no'
 auto = 'yes'
 
 # Specify the start and end dates if auto mode above is set to 'no' (Format: MM-DD-YYYY)
-start_date = '05-22-2026'
-end_date = '05-23-2026'
+start_date = '05-01-2026'
+end_date = '05-03-2026'
 
 # %% [markdown]
 # ### Preset Variables
@@ -119,7 +120,7 @@ end_date = '05-23-2026'
 
 # %%
 ## Presets ##
-products = ['pgb','flx']
+products = ['flx'] # No longer need to download 'pgb' files since we are now pulling precip rate from 'flx' files.
 utc = ['00','06','12','18']
 
 # Define mask variables

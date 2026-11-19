@@ -50,7 +50,7 @@ import os
 import copy
 
 # %%
-sys.path.append(os.path.abspath('../../'))
+sys.path.append(os.path.abspath('../../../'))
 from src.data_processor import CFSTransformer
 from src.data_loader import DataLoader
 from src.data_processor import SeasonalCycleProcessor
@@ -190,7 +190,7 @@ X = pd.DataFrame({
     'superior_land_precipitation': data['superior_land_precipitation'],
     'michigan-huron_land_precipitation': data['michigan-huron_land_precipitation'],
     'erie_land_precipitation': data['erie_land_precipitation'],
-    'ontario_land_precipitation': data['ontario_lake_precipitation'],
+    'ontario_land_precipitation': data['ontario_land_precipitation'],
     'superior_lake_evaporation': data['superior_lake_evaporation'],
     'michigan-huron_lake_evaporation': data['michigan-huron_lake_evaporation'],
     'erie_lake_evaporation': data['erie_lake_evaporation'],
@@ -198,7 +198,7 @@ X = pd.DataFrame({
     'superior_land_evaporation': data['superior_land_evaporation'],
     'michigan-huron_land_evaporation': data['michigan-huron_land_evaporation'],
     'erie_land_evaporation': data['erie_land_evaporation'],
-    'ontario_land_evaporation': data['ontario_lake_evaporation'],
+    'ontario_land_evaporation': data['ontario_land_evaporation'],
     'superior_lake_air_temperature': data['superior_lake_air_temperature'],
     'michigan-huron_lake_air_temperature': data['michigan-huron_lake_air_temperature'],
     'erie_lake_air_temperature': data['erie_lake_air_temperature'],
@@ -206,7 +206,7 @@ X = pd.DataFrame({
     'superior_land_air_temperature': data['superior_land_air_temperature'],
     'michigan-huron_land_air_temperature': data['michigan-huron_land_air_temperature'],
     'erie_land_air_temperature': data['erie_land_air_temperature'],
-    'ontario_land_air_temperature': data['ontario_lake_air_temperature']
+    'ontario_land_air_temperature': data['ontario_land_air_temperature']
 })
 
 # Set the index by date
@@ -323,7 +323,7 @@ scp_X = SeasonalCycleProcessor().fit(
 )
 
 # Save the fitted seasonal cycle processor for later use
-paths = scp_X.save(input_dir + "input/climatology/inputs")
+#paths = scp_X.save(input_dir + "input/climatology/inputs")
 
 # Transform the full dataset
 X_anom = scp_X.transform(X)
@@ -846,444 +846,529 @@ y_clim_abs = SeasonalCycleProcessor().add_climatology_back_leadwide(y_true_anom 
 print("R² (absolute, climatology-only):", r2_flat(y_true_abs, y_clim_abs))
 
 # %%
-## Neural Network ##
+# ## Neural Network ##
 
-# Define the neural network architecture
-nn_model = tf.keras.Sequential([
-    tf.keras.layers.Input(shape=(X_train.shape[1],)),
-    tf.keras.layers.Dense(128, activation='relu'),
-    tf.keras.layers.Dense(64, activation='relu'),
-    tf.keras.layers.Dense(y_train.shape[1])
-])
+# # Define the neural network architecture
+# nn_model = tf.keras.Sequential([
+#     tf.keras.layers.Input(shape=(X_train.shape[1],)),
+#     tf.keras.layers.Dense(128, activation='relu'),
+#     tf.keras.layers.Dense(64, activation='relu'),
+#     tf.keras.layers.Dense(y_train.shape[1])
+# ])
 
-# Compile the model
-nn_model.compile(optimizer='adam', loss='mse', metrics=['mae']) # Using mean squared error (mse) as the loss function
+# # Compile the model
+# nn_model.compile(optimizer='adam', loss='mse', metrics=['mae']) # Using mean squared error (mse) as the loss function
 
-print(X_train_scaled.shape, y_train_scaled.shape)
-# Fit the model to the training data
-history = nn_model.fit(X_train_scaled, y_train_scaled, epochs=50, batch_size=32, validation_split=0.2, verbose=1)#, callbacks=[early_stopping])
+# print(X_train_scaled.shape, y_train_scaled.shape)
+# # Fit the model to the training data
+# history = nn_model.fit(X_train_scaled, y_train_scaled, epochs=50, batch_size=32, validation_split=0.2, verbose=1)#, callbacks=[early_stopping])
 
-# Plotting the training and validation loss
-import matplotlib.pyplot as plt
+# # Plotting the training and validation loss
+# import matplotlib.pyplot as plt
 
-plt.plot(history.history['loss'], label='Training Loss')
-plt.plot(history.history['val_loss'], label='Validation Loss')
-plt.xlabel('Epochs')
-plt.ylabel('Loss')
-plt.legend()
-plt.show()
+# plt.plot(history.history['loss'], label='Training Loss')
+# plt.plot(history.history['val_loss'], label='Validation Loss')
+# plt.xlabel('Epochs')
+# plt.ylabel('Loss')
+# plt.legend()
+# plt.show()
 
-# Save the trained model
-joblib.dump(nn_model, input_dir + 'input/models/NN_trained_model_anom.joblib')
+# # Save the trained model
+# joblib.dump(nn_model, input_dir + 'input/models/NN_trained_model_anom.joblib')
 
-# Predict on the test set
-y_pred_NN = nn_model.predict(X_test_scaled)
+# # Predict on the test set
+# y_pred_NN = nn_model.predict(X_test_scaled)
 
-# Evaluate the model
-r2 = r2_score(y_test_scaled, y_pred_NN)
+# # Evaluate the model
+# r2 = r2_score(y_test_scaled, y_pred_NN)
 
-print(f"R² Score: {r2:.4f}")
+# print(f"R² Score: {r2:.4f}")
+
+# %% [markdown]
+# Create climatology files for forecasting using archived CFS forecasts.
 
 # %%
-def make_abs_df(y_pred, model_name):
-    y_anom = unscale_to_df(
-        y_pred,
-        y_scaler,
-        y_test.index,
-        y_test.columns
+# Path to input CFS forecast database
+from src.database_utils import CFSDatabase
+
+cfs_database = '/Users/ljob/Desktop/Data/cfs_forecast_archive_2011-2026.db'
+cfs_table = 'cfs_forecast_data'
+
+# Load CFS forecast data from the database and format it before predicting CNBS
+cfs_data = CFSDatabase(cfs_database, cfs_table).load()
+
+def structure_cfs_for_fit(df, value_col="value [mm]"):
+    """
+    Convert long-format CFS data into wide format with a DatetimeIndex.
+    """
+
+    index_cols = ["cfs_run", "year", "month"]
+    pivot_cols = ["lake", "surface_type", "component"]
+
+    # Check for duplicate records
+    duplicate_cols = index_cols + pivot_cols
+
+    if df.duplicated(subset=duplicate_cols).any():
+        raise ValueError("Duplicate CFS records found.")
+
+    # Pivot
+    wide_df = df.pivot(
+        index=index_cols,
+        columns=pivot_cols,
+        values=value_col
     )
 
-    y_abs = SeasonalCycleProcessor().add_climatology_back_leadwide(
-        y_anom,
-        scp_y
+    # Flatten column names
+    wide_df.columns = [
+        "_".join(str(x) for x in col)
+        for col in wide_df.columns
+    ]
+
+    wide_df = wide_df.reset_index()
+
+    # Create DatetimeIndex
+    wide_df.index = pd.to_datetime(
+        dict(
+            year=wide_df["year"],
+            month=wide_df["month"],
+            day=1
+        )
     )
 
-    # copy() defragments; assign() avoids repeated column insertion issues
-    return y_abs.copy().assign(model=model_name)
+    wide_df.index.name = "date"
 
-
-y_gp_abs = make_abs_df(y_pred_GP,  "GP")
-y_rf_abs = make_abs_df(y_pred_RFR, "RFR")
-y_nn_abs = make_abs_df(y_pred_NN,  "NN")
-y_xgb_abs = make_abs_df(y_pred_XGB, "XGB")
-
-df_all = (
-    pd.concat(
-        [y_gp_abs, y_rf_abs, y_nn_abs, y_xgb_abs],
-        axis=0
+    # Drop unnecessary columns
+    wide_df = wide_df.drop(
+        columns=["cfs_run", "year", "month"]
     )
-    .reset_index()
-    .rename(columns={"date": "cfs_run", "index": "cfs_run"})
+
+    return wide_df.sort_index()
+
+# This creates a climatology file that is 12 month averages for each CFS variable
+#X_structured = structure_cfs_for_fit(cfs_data)
+
+# This calculates climatology for each CFS variable including *moX variables (lead times)
+X_structured = CFSTransformer(cfs_data).structure_input()
+
+train_start_date = '2011-03-01'
+train_end_date = '2026-12-31'
+train_slice = slice(train_start_date, train_end_date)
+
+# Fit monthly climatology on TRAIN ONLY (avoid leakage)
+scp_X = SeasonalCycleProcessor().fit(
+    X_structured,
+    var_list=list(X_structured.columns),
+    baseline_time=train_slice,
+    baseline_definition={
+        "train_start": train_start_date,
+        "train_end": train_end_date,
+        "note": "inputs climatology fit on training period only"
+    },
 )
 
-# %%
-# Step 1: Melt into long format
-df_melted = df_all.melt(
-    id_vars=['cfs_run', 'model'],
-    var_name='variable',
-    value_name='value'
-)
-
+# Save artifact so forecast notebook can load the same baseline
+paths = scp_X.save("/Users/ljob/Desktop/cnbs-predictor/data/input/climatology/inputs")
 
 # %%
-# Step 2: Split into lake, variable, and month_offset
-split_cols = df_melted['variable'].str.rsplit('_', n=2, expand=True)
-df_melted['lake'] = split_cols[0].str.replace('_target', '', regex=False)
-df_melted['variable'] = split_cols[1]
-df_melted['month_offset'] = split_cols[2].str.replace('mo', '', regex=False).astype(int)
+# def make_abs_df(y_pred, model_name):
+#     y_anom = unscale_to_df(
+#         y_pred,
+#         y_scaler,
+#         y_test.index,
+#         y_test.columns
+#     )
 
-# Step 3: Compute forecast_month (vectorized, better)
-df_melted['cfs_run'] = pd.to_datetime(df_melted['cfs_run'])
-df_melted['forecast_month'] = (
-    df_melted['cfs_run'].dt.to_period('M') +
-    df_melted['month_offset']
-).astype(str)
+#     y_abs = SeasonalCycleProcessor().add_climatology_back_leadwide(
+#         y_anom,
+#         scp_y
+#     )
+
+#     # copy() defragments; assign() avoids repeated column insertion issues
+#     return y_abs.copy().assign(model=model_name)
+
+
+# y_gp_abs = make_abs_df(y_pred_GP,  "GP")
+# y_rf_abs = make_abs_df(y_pred_RFR, "RFR")
+# y_nn_abs = make_abs_df(y_pred_NN,  "NN")
+# y_xgb_abs = make_abs_df(y_pred_XGB, "XGB")
+
+# df_all = (
+#     pd.concat(
+#         [y_gp_abs, y_rf_abs, y_nn_abs, y_xgb_abs],
+#         axis=0
+#     )
+#     .reset_index()
+#     .rename(columns={"date": "cfs_run", "index": "cfs_run"})
+# )
+
+# %%
+# # Step 1: Melt into long format
+# df_melted = df_all.melt(
+#     id_vars=['cfs_run', 'model'],
+#     var_name='variable',
+#     value_name='value'
+# )
 
 
 # %%
-df_melted_tmp = df_melted.drop(columns=['month_offset'])
+# # Step 2: Split into lake, variable, and month_offset
+# split_cols = df_melted['variable'].str.rsplit('_', n=2, expand=True)
+# df_melted['lake'] = split_cols[0].str.replace('_target', '', regex=False)
+# df_melted['variable'] = split_cols[1]
+# df_melted['month_offset'] = split_cols[2].str.replace('mo', '', regex=False).astype(int)
 
-# Step 4: Pivot with BOTH lake + variable as columns
-df_tidy = df_melted.pivot_table(
-    index=['cfs_run', 'model', 'forecast_month'],
-    columns=['lake', 'variable'],
-    values='value'
-)
+# # Step 3: Compute forecast_month (vectorized, better)
+# df_melted['cfs_run'] = pd.to_datetime(df_melted['cfs_run'])
+# df_melted['forecast_month'] = (
+#     df_melted['cfs_run'].dt.to_period('M') +
+#     df_melted['month_offset']
+# ).astype(str)
 
-# Flatten MultiIndex columns → "lake_variable"
-df_tidy.columns = [f"{lake}_{var}" for lake, var in df_tidy.columns]
-
-df_tidy = df_tidy.reset_index()
-
-# Step 5: Reorder columns
-expected_vars = ["precipitation", "evaporation", "runoff", "nbs"]
-lakes = ['superior', 'michigan-huron', 'erie', 'ontario']
-
-ordered_feature_cols = [
-    f"{lake}_{var}"
-    for lake in lakes
-    for var in expected_vars
-    if f"{lake}_{var}" in df_tidy.columns
-]
-
-cols = ["cfs_run", "forecast_month", "model"] + ordered_feature_cols
-
-df_final = df_tidy[cols]
-
-# Convert cfs_run back to YYYYMMDDHH format
-df_final["cfs_run"] = pd.to_datetime(df_final["cfs_run"]).dt.strftime("%Y%m%d%H")
 
 # %%
-# Optionally save the test data
-output_dir = os.path.join(input_dir, "output")
-os.makedirs(output_dir, exist_ok=True)
+# df_melted_tmp = df_melted.drop(columns=['month_offset'])
 
-df_final.to_csv(
-    os.path.join(output_dir, "CNBS_test_anom.csv"),
-    index=True
-)
+# # Step 4: Pivot with BOTH lake + variable as columns
+# df_tidy = df_melted.pivot_table(
+#     index=['cfs_run', 'model', 'forecast_month'],
+#     columns=['lake', 'variable'],
+#     values='value'
+# )
+
+# # Flatten MultiIndex columns → "lake_variable"
+# df_tidy.columns = [f"{lake}_{var}" for lake, var in df_tidy.columns]
+
+# df_tidy = df_tidy.reset_index()
+
+# # Step 5: Reorder columns
+# expected_vars = ["precipitation", "evaporation", "runoff", "nbs"]
+# lakes = ['superior', 'michigan-huron', 'erie', 'ontario']
+
+# ordered_feature_cols = [
+#     f"{lake}_{var}"
+#     for lake in lakes
+#     for var in expected_vars
+#     if f"{lake}_{var}" in df_tidy.columns
+# ]
+
+# cols = ["cfs_run", "forecast_month", "model"] + ordered_feature_cols
+
+# df_final = df_tidy[cols]
+
+# # Convert cfs_run back to YYYYMMDDHH format
+# df_final["cfs_run"] = pd.to_datetime(df_final["cfs_run"]).dt.strftime("%Y%m%d%H")
 
 # %%
-# 1) standardized -> anomaly units (lead-wide columns already present)
-y_true_anom = unscale_to_df(y_test_scaled, y_scaler, y_test.index, y_test.columns)
-y_pred_anom = unscale_to_df(y_pred_NN,    y_scaler, y_test.index, y_test.columns)
+# # Optionally save the test data
+# output_dir = os.path.join(input_dir, "output")
+# os.makedirs(output_dir, exist_ok=True)
 
-print("R² (anomaly, lead-wide):", r2_flat(y_true_anom, y_pred_anom))
+# df_final.to_csv(
+#     os.path.join(output_dir, "CNBS_test_anom.csv"),
+#     index=True
+# )
 
-# 2) anomaly -> absolute (lead-aware)
-y_true_abs = SeasonalCycleProcessor().add_climatology_back_leadwide(y_true_anom, scp_y)
-y_pred_abs = SeasonalCycleProcessor().add_climatology_back_leadwide(y_pred_anom, scp_y)
+# %%
+# # 1) standardized -> anomaly units (lead-wide columns already present)
+# y_true_anom = unscale_to_df(y_test_scaled, y_scaler, y_test.index, y_test.columns)
+# y_pred_anom = unscale_to_df(y_pred_NN,    y_scaler, y_test.index, y_test.columns)
 
-print("R² (absolute, reconstructed):", r2_flat(y_true_abs, y_pred_abs))
+# print("R² (anomaly, lead-wide):", r2_flat(y_true_anom, y_pred_anom))
 
-# 3) climatology-only baseline in absolute space (lead-aware!)
-y_clim_abs = SeasonalCycleProcessor().add_climatology_back_leadwide(y_true_anom * 0.0, scp_y)
-print("R² (absolute, climatology-only):", r2_flat(y_true_abs, y_clim_abs))
+# # 2) anomaly -> absolute (lead-aware)
+# y_true_abs = SeasonalCycleProcessor().add_climatology_back_leadwide(y_true_anom, scp_y)
+# y_pred_abs = SeasonalCycleProcessor().add_climatology_back_leadwide(y_pred_anom, scp_y)
+
+# print("R² (absolute, reconstructed):", r2_flat(y_true_abs, y_pred_abs))
+
+# # 3) climatology-only baseline in absolute space (lead-aware!)
+# y_clim_abs = SeasonalCycleProcessor().add_climatology_back_leadwide(y_true_anom * 0.0, scp_y)
+# print("R² (absolute, climatology-only):", r2_flat(y_true_abs, y_clim_abs))
 
 # %% [markdown]
 # Calculate Skill Metrics on the Test Data Set
 
 # %%
-def compute_skill_metrics(
-    model,
-    y_true_std,
-    y_pred_std,
-    y_scaler,
-    *,
-    y_index,
-    y_columns,
-    seasonal_processor=None,
-    by_lead=False,
-):
-    """
-    Compute skill metrics for lead-wide targets in:
-      (1) anomaly space
-      (2) absolute reconstructed space (adds monthly climatology back; lead-aware)
-      (3) absolute climatology-only baseline (lead-aware)
+# def compute_skill_metrics(
+#     model,
+#     y_true_std,
+#     y_pred_std,
+#     y_scaler,
+#     *,
+#     y_index,
+#     y_columns,
+#     seasonal_processor=None,
+#     by_lead=False,
+# ):
+#     """
+#     Compute skill metrics for lead-wide targets in:
+#       (1) anomaly space
+#       (2) absolute reconstructed space (adds monthly climatology back; lead-aware)
+#       (3) absolute climatology-only baseline (lead-aware)
 
-    Parameters
-    ----------
-    model : str
-        Model name.
+#     Parameters
+#     ----------
+#     model : str
+#         Model name.
 
-    y_true_std : np.ndarray
-        True values in standardized space, shape (n_samples, n_targets).
+#     y_true_std : np.ndarray
+#         True values in standardized space, shape (n_samples, n_targets).
 
-    y_pred_std : np.ndarray
-        Predicted values in standardized space, shape (n_samples, n_targets).
+#     y_pred_std : np.ndarray
+#         Predicted values in standardized space, shape (n_samples, n_targets).
 
-    y_scaler : sklearn-like scaler
-        Must implement inverse_transform() mapping standardized -> anomaly units.
+#     y_scaler : sklearn-like scaler
+#         Must implement inverse_transform() mapping standardized -> anomaly units.
 
-    y_index : pd.DatetimeIndex
-        Index for the target rows (init dates).
+#     y_index : pd.DatetimeIndex
+#         Index for the target rows (init dates).
 
-    y_columns : list[str]
-        Target column names, expected to include suffixes like '_mo0'..'_mo11'.
+#     y_columns : list[str]
+#         Target column names, expected to include suffixes like '_mo0'..'_mo11'.
 
-    seasonal_processor : SeasonalCycleProcessor, optional
-        If provided, must contain `climatology` used to reconstruct absolute values.
+#     seasonal_processor : SeasonalCycleProcessor, optional
+#         If provided, must contain `climatology` used to reconstruct absolute values.
 
-    by_lead : bool
-        If True, adds R² by lead month as columns: R²_mo0 ... R²_mo11
-        (computed in each space where applicable).
+#     by_lead : bool
+#         If True, adds R² by lead month as columns: R²_mo0 ... R²_mo11
+#         (computed in each space where applicable).
 
-    Returns
-    -------
-    pd.DataFrame
-        One or more rows (one per Space) with metrics.
-        Columns include: Model, Space, RMSE, R², Bias, Std Dev, CRPS (+ optional lead columns)
-    """
+#     Returns
+#     -------
+#     pd.DataFrame
+#         One or more rows (one per Space) with metrics.
+#         Columns include: Model, Space, RMSE, R², Bias, Std Dev, CRPS (+ optional lead columns)
+#     """
 
-    def to_df(y_std):
-        return pd.DataFrame(
-            y_scaler.inverse_transform(y_std),
-            index=y_index,
-            columns=y_columns
-        )
+#     def to_df(y_std):
+#         return pd.DataFrame(
+#             y_scaler.inverse_transform(y_std),
+#             index=y_index,
+#             columns=y_columns
+#         )
 
-    def flat_metrics(y_true_df, y_pred_df):
-        yt = y_true_df.to_numpy().ravel()
-        yp = y_pred_df.to_numpy().ravel()
+#     def flat_metrics(y_true_df, y_pred_df):
+#         yt = y_true_df.to_numpy().ravel()
+#         yp = y_pred_df.to_numpy().ravel()
 
-        rmse = np.sqrt(mean_squared_error(yt, yp))
-        r2 = r2_score(yt, yp)  # IMPORTANT: consistent space (not standardized)
-        bias = np.mean(yp - yt)
-        std_dev = np.std(yp - yt, ddof=1)
-        crps = np.mean(crps_ensemble(yt, yp[:, None]))  # deterministic CRPS
-        return rmse, r2, bias, std_dev, crps
+#         rmse = np.sqrt(mean_squared_error(yt, yp))
+#         r2 = r2_score(yt, yp)  # IMPORTANT: consistent space (not standardized)
+#         bias = np.mean(yp - yt)
+#         std_dev = np.std(yp - yt, ddof=1)
+#         crps = np.mean(crps_ensemble(yt, yp[:, None]))  # deterministic CRPS
+#         return rmse, r2, bias, std_dev, crps
 
-    def r2_by_lead(y_true_df, y_pred_df):
-        out = {}
-        for lead in range(12):
-            cols = [c for c in y_true_df.columns if c.endswith(f"_mo{lead}")]
-            if not cols:
-                continue
-            out[f"R²_mo{lead}"] = r2_score(
-                y_true_df[cols].to_numpy().ravel(),
-                y_pred_df[cols].to_numpy().ravel()
-            )
-        return out
+#     def r2_by_lead(y_true_df, y_pred_df):
+#         out = {}
+#         for lead in range(12):
+#             cols = [c for c in y_true_df.columns if c.endswith(f"_mo{lead}")]
+#             if not cols:
+#                 continue
+#             out[f"R²_mo{lead}"] = r2_score(
+#                 y_true_df[cols].to_numpy().ravel(),
+#                 y_pred_df[cols].to_numpy().ravel()
+#             )
+#         return out
 
-    rows = []
+#     rows = []
 
-    # --- (1) anomaly space ---
-    y_true_anom = to_df(y_true_std)
-    y_pred_anom = to_df(y_pred_std)
+#     # --- (1) anomaly space ---
+#     y_true_anom = to_df(y_true_std)
+#     y_pred_anom = to_df(y_pred_std)
 
-    rmse, r2, bias, std_dev, crps = flat_metrics(y_true_anom, y_pred_anom)
-    row = {
-        "Model": model,
-        "Space": "anomaly",
-        "RMSE": round(rmse, 3),
-        "R²": round(r2, 3),
-        "Bias": round(bias, 3),
-        "Std Dev": round(std_dev, 3),
-        "CRPS": round(crps, 3),
-    }
-    if by_lead:
-        row.update({k: round(v, 3) for k, v in r2_by_lead(y_true_anom, y_pred_anom).items()})
-    rows.append(row)
+#     rmse, r2, bias, std_dev, crps = flat_metrics(y_true_anom, y_pred_anom)
+#     row = {
+#         "Model": model,
+#         "Space": "anomaly",
+#         "RMSE": round(rmse, 3),
+#         "R²": round(r2, 3),
+#         "Bias": round(bias, 3),
+#         "Std Dev": round(std_dev, 3),
+#         "CRPS": round(crps, 3),
+#     }
+#     if by_lead:
+#         row.update({k: round(v, 3) for k, v in r2_by_lead(y_true_anom, y_pred_anom).items()})
+#     rows.append(row)
 
-    # --- (2) absolute reconstructed + (3) climatology-only ---
-    if seasonal_processor is not None:
-        y_true_abs = SeasonalCycleProcessor().add_climatology_back_leadwide(y_true_anom, seasonal_processor)
-        y_pred_abs = SeasonalCycleProcessor().add_climatology_back_leadwide(y_pred_anom, seasonal_processor)
+#     # --- (2) absolute reconstructed + (3) climatology-only ---
+#     if seasonal_processor is not None:
+#         y_true_abs = SeasonalCycleProcessor().add_climatology_back_leadwide(y_true_anom, seasonal_processor)
+#         y_pred_abs = SeasonalCycleProcessor().add_climatology_back_leadwide(y_pred_anom, seasonal_processor)
 
-        rmse, r2, bias, std_dev, crps = flat_metrics(y_true_abs, y_pred_abs)
-        row = {
-            "Model": model,
-            "Space": "absolute_reconstructed",
-            "RMSE": round(rmse, 3),
-            "R²": round(r2, 3),
-            "Bias": round(bias, 3),
-            "Std Dev": round(std_dev, 3),
-            "CRPS": round(crps, 3),
-        }
-        if by_lead:
-            row.update({k: round(v, 3) for k, v in r2_by_lead(y_true_abs, y_pred_abs).items()})
-        rows.append(row)
+#         rmse, r2, bias, std_dev, crps = flat_metrics(y_true_abs, y_pred_abs)
+#         row = {
+#             "Model": model,
+#             "Space": "absolute_reconstructed",
+#             "RMSE": round(rmse, 3),
+#             "R²": round(r2, 3),
+#             "Bias": round(bias, 3),
+#             "Std Dev": round(std_dev, 3),
+#             "CRPS": round(crps, 3),
+#         }
+#         if by_lead:
+#             row.update({k: round(v, 3) for k, v in r2_by_lead(y_true_abs, y_pred_abs).items()})
+#         rows.append(row)
 
-        # climatology-only baseline: 0 anomalies + climatology
-        y_clim_abs = SeasonalCycleProcessor().add_climatology_back_leadwide(y_true_anom * 0.0, seasonal_processor)
+#         # climatology-only baseline: 0 anomalies + climatology
+#         y_clim_abs = SeasonalCycleProcessor().add_climatology_back_leadwide(y_true_anom * 0.0, seasonal_processor)
 
-        rmse, r2, bias, std_dev, crps = flat_metrics(y_true_abs, y_clim_abs)
-        row = {
-            "Model": model,
-            "Space": "absolute_climatology_only",
-            "RMSE": round(rmse, 3),
-            "R²": round(r2, 3),
-            "Bias": round(bias, 3),
-            "Std Dev": round(std_dev, 3),
-            "CRPS": round(crps, 3),
-        }
-        if by_lead:
-            row.update({k: round(v, 3) for k, v in r2_by_lead(y_true_abs, y_clim_abs).items()})
-        rows.append(row)
+#         rmse, r2, bias, std_dev, crps = flat_metrics(y_true_abs, y_clim_abs)
+#         row = {
+#             "Model": model,
+#             "Space": "absolute_climatology_only",
+#             "RMSE": round(rmse, 3),
+#             "R²": round(r2, 3),
+#             "Bias": round(bias, 3),
+#             "Std Dev": round(std_dev, 3),
+#             "CRPS": round(crps, 3),
+#         }
+#         if by_lead:
+#             row.update({k: round(v, 3) for k, v in r2_by_lead(y_true_abs, y_clim_abs).items()})
+#         rows.append(row)
 
-    return pd.DataFrame(rows)
-
-# %%
-skill_GP = compute_skill_metrics(
-    "Gaussian Process",
-    y_test_scaled,
-    y_pred_GP,
-    y_scaler,
-    y_index=y_test.index,
-    y_columns=y_test.columns,
-    seasonal_processor=scp_y,   # important
-    by_lead=True,              # flip to True when you want all the lead times
-)
-
-skill_RF = compute_skill_metrics(
-    "Random Forest",
-    y_test_scaled,
-    y_pred_RFR,
-    y_scaler,
-    y_index=y_test.index,
-    y_columns=y_test.columns,
-    seasonal_processor=scp_y,   # important
-    by_lead=True,              # flip to True when you want all the lead times
-)
-
-skill_XGB = compute_skill_metrics(
-    "XG Boost",
-    y_test_scaled,
-    y_pred_XGB,
-    y_scaler,
-    y_index=y_test.index,
-    y_columns=y_test.columns,
-    seasonal_processor=scp_y,   # important
-    by_lead=True,              # flip to True when you want all the lead times
-)
-
-skill_NN = compute_skill_metrics(
-    "Neural Network",
-    y_test_scaled,
-    y_pred_NN,
-    y_scaler,
-    y_index=y_test.index,
-    y_columns=y_test.columns,
-    seasonal_processor=scp_y,   # important
-    by_lead=True,              # flip to True when you want all the lead times
-)
-
-results_df = pd.concat([skill_GP, skill_RF, skill_NN, skill_XGB], ignore_index=True)
+#     return pd.DataFrame(rows)
 
 # %%
-results_df
+# skill_GP = compute_skill_metrics(
+#     "Gaussian Process",
+#     y_test_scaled,
+#     y_pred_GP,
+#     y_scaler,
+#     y_index=y_test.index,
+#     y_columns=y_test.columns,
+#     seasonal_processor=scp_y,   # important
+#     by_lead=True,              # flip to True when you want all the lead times
+# )
+
+# skill_RF = compute_skill_metrics(
+#     "Random Forest",
+#     y_test_scaled,
+#     y_pred_RFR,
+#     y_scaler,
+#     y_index=y_test.index,
+#     y_columns=y_test.columns,
+#     seasonal_processor=scp_y,   # important
+#     by_lead=True,              # flip to True when you want all the lead times
+# )
+
+# skill_XGB = compute_skill_metrics(
+#     "XG Boost",
+#     y_test_scaled,
+#     y_pred_XGB,
+#     y_scaler,
+#     y_index=y_test.index,
+#     y_columns=y_test.columns,
+#     seasonal_processor=scp_y,   # important
+#     by_lead=True,              # flip to True when you want all the lead times
+# )
+
+# skill_NN = compute_skill_metrics(
+#     "Neural Network",
+#     y_test_scaled,
+#     y_pred_NN,
+#     y_scaler,
+#     y_index=y_test.index,
+#     y_columns=y_test.columns,
+#     seasonal_processor=scp_y,   # important
+#     by_lead=True,              # flip to True when you want all the lead times
+# )
+
+# results_df = pd.concat([skill_GP, skill_RF, skill_NN, skill_XGB], ignore_index=True)
 
 # %%
-# start from results_df (the big table)
-base = results_df[["Model", "Space", "RMSE", "R²", "Bias", "Std Dev", "CRPS"]].copy()
-
-recon = base[base["Space"] == "absolute_reconstructed"][["Model", "R²", "RMSE"]].rename(
-    columns={"R²": "R²_abs", "RMSE": "RMSE_abs"}
-)
-anom = base[base["Space"] == "anomaly"][["Model", "R²", "RMSE"]].rename(
-    columns={"R²": "R²_anom", "RMSE": "RMSE_anom"}
-)
-clim = base[base["Space"] == "absolute_climatology_only"][["Model", "R²", "RMSE"]].rename(
-    columns={"R²": "R²_clim", "RMSE": "RMSE_clim"}
-)
-
-summary = (
-    recon.merge(anom, on="Model")
-         .merge(clim, on="Model")
-         .assign(delta_R2=lambda d: d["R²_abs"] - d["R²_clim"])
-         .sort_values("delta_R2", ascending=False)
-         .reset_index(drop=True)
-)
-
-summary.style.format({
-    "R²_abs": "{:.3f}", "R²_anom": "{:.3f}", "R²_clim": "{:.3f}", "delta_R2": "{:.3f}",
-    "RMSE_abs": "{:.2f}", "RMSE_anom": "{:.2f}", "RMSE_clim": "{:.2f}",
-})
+# results_df
 
 # %%
-def plot_styled_table(df):
-    fig, ax = plt.subplots(figsize=(1.8 * len(df.columns), 1 + 0.5 * len(df)))
-    ax.axis('off')
+# # start from results_df (the big table)
+# base = results_df[["Model", "Space", "RMSE", "R²", "Bias", "Std Dev", "CRPS"]].copy()
 
-    table_data = [df.columns.to_list()] + df.round(3).values.tolist()
+# recon = base[base["Space"] == "absolute_reconstructed"][["Model", "R²", "RMSE"]].rename(
+#     columns={"R²": "R²_abs", "RMSE": "RMSE_abs"}
+# )
+# anom = base[base["Space"] == "anomaly"][["Model", "R²", "RMSE"]].rename(
+#     columns={"R²": "R²_anom", "RMSE": "RMSE_anom"}
+# )
+# clim = base[base["Space"] == "absolute_climatology_only"][["Model", "R²", "RMSE"]].rename(
+#     columns={"R²": "R²_clim", "RMSE": "RMSE_clim"}
+# )
 
-    table = ax.table(
-        cellText=table_data,
-        loc='center',
-        cellLoc='center',
-        edges='closed'
-    )
+# summary = (
+#     recon.merge(anom, on="Model")
+#          .merge(clim, on="Model")
+#          .assign(delta_R2=lambda d: d["R²_abs"] - d["R²_clim"])
+#          .sort_values("delta_R2", ascending=False)
+#          .reset_index(drop=True)
+# )
 
-    ncols = len(df.columns)
-
-    for (row, col), cell in table.get_celld().items():
-        if row == 0:
-            cell.set_facecolor('#d3d3d3')
-            cell.get_text().set_fontweight('bold')
-        cell.get_text().set_fontsize(11)
-
-        cell.set_height(0.12)
-
-        # Wider model column
-        if col == 0:
-            cell.set_width(0.25)
-        else:
-            cell.set_width(0.75 / (ncols - 1))
-
-    table.auto_set_font_size(False)
-
-    plt.tight_layout()
-    plt.show()
+# summary.style.format({
+#     "R²_abs": "{:.3f}", "R²_anom": "{:.3f}", "R²_clim": "{:.3f}", "delta_R2": "{:.3f}",
+#     "RMSE_abs": "{:.2f}", "RMSE_anom": "{:.2f}", "RMSE_clim": "{:.2f}",
+# })
 
 # %%
-plot_styled_table(summary)
+# def plot_styled_table(df):
+#     fig, ax = plt.subplots(figsize=(1.8 * len(df.columns), 1 + 0.5 * len(df)))
+#     ax.axis('off')
+
+#     table_data = [df.columns.to_list()] + df.round(3).values.tolist()
+
+#     table = ax.table(
+#         cellText=table_data,
+#         loc='center',
+#         cellLoc='center',
+#         edges='closed'
+#     )
+
+#     ncols = len(df.columns)
+
+#     for (row, col), cell in table.get_celld().items():
+#         if row == 0:
+#             cell.set_facecolor('#d3d3d3')
+#             cell.get_text().set_fontweight('bold')
+#         cell.get_text().set_fontsize(11)
+
+#         cell.set_height(0.12)
+
+#         # Wider model column
+#         if col == 0:
+#             cell.set_width(0.25)
+#         else:
+#             cell.set_width(0.75 / (ncols - 1))
+
+#     table.auto_set_font_size(False)
+
+#     plt.tight_layout()
+#     plt.show()
 
 # %%
-lead_cols = [c for c in results_df.columns if c.startswith("R²_mo")]
+# plot_styled_table(summary)
 
-lead_skill = (
-    results_df[results_df["Space"] == "anomaly"][["Model"] + lead_cols]
-    .melt(id_vars="Model", var_name="lead", value_name="R²")
-)
+# %%
+# lead_cols = [c for c in results_df.columns if c.startswith("R²_mo")]
 
-lead_skill["lead"] = lead_skill["lead"].str.replace("R²_mo", "").astype(int)
-lead_skill = lead_skill.sort_values(["Model", "lead"])
+# lead_skill = (
+#     results_df[results_df["Space"] == "anomaly"][["Model"] + lead_cols]
+#     .melt(id_vars="Model", var_name="lead", value_name="R²")
+# )
+
+# lead_skill["lead"] = lead_skill["lead"].str.replace("R²_mo", "").astype(int)
+# lead_skill = lead_skill.sort_values(["Model", "lead"])
 
 # %% [markdown]
 # #### Plot anomaly skill by lead month and method
 
 # %%
-plt.figure(figsize=(8,5))
-for model, g in lead_skill.groupby("Model"):
-    plt.plot(g["lead"], g["R²"], label=model)
+# plt.figure(figsize=(8,5))
+# for model, g in lead_skill.groupby("Model"):
+#     plt.plot(g["lead"], g["R²"], label=model)
 
-plt.axhline(0, linewidth=1, color='black', linestyle='--')
-plt.xlabel("Lead month")
-plt.ylabel("R² (anomaly)")
-plt.title("Anomaly skill by lead month")
-plt.legend()
-plt.grid(True)
-plt.show()
+# plt.axhline(0, linewidth=1, color='black', linestyle='--')
+# plt.xlabel("Lead month")
+# plt.ylabel("R² (anomaly)")
+# plt.title("Anomaly skill by lead month")
+# plt.legend()
+# plt.grid(True)
+# plt.show()
 
 # %% [markdown]
 # ### Plot skill score relative to climatology 
@@ -1291,68 +1376,68 @@ plt.show()
 # Current setup below will just run this analysis for the last model to be tested, so the results don't reflect the "best" modeling efforts necessarily
 
 # %%
-summary = summary.assign(
-    SkillScore=lambda d: 1 - d["RMSE_abs"] / d["RMSE_clim"]
-)
+# summary = summary.assign(
+#     SkillScore=lambda d: 1 - d["RMSE_abs"] / d["RMSE_clim"]
+# )
 
-summary.style.format({
-    "R²_abs": "{:.3f}",
-    "R²_clim": "{:.3f}",
-    "delta_R2": "{:.3f}",
-    "RMSE_abs": "{:.2f}",
-    "RMSE_clim": "{:.2f}",
-    "SkillScore": "{:.3f}"
-})
+# summary.style.format({
+#     "R²_abs": "{:.3f}",
+#     "R²_clim": "{:.3f}",
+#     "delta_R2": "{:.3f}",
+#     "RMSE_abs": "{:.2f}",
+#     "RMSE_clim": "{:.2f}",
+#     "SkillScore": "{:.3f}"
+# })
 
 # %%
-def rmse(a, b):
-    return np.sqrt(np.mean((a - b) ** 2))
+# def rmse(a, b):
+#     return np.sqrt(np.mean((a - b) ** 2))
 
-def rmse_by_lead(y_true_df, y_pred_df):
-    results = {}
-    for lead in range(12):
-        cols = [c for c in y_true_df.columns if c.endswith(f"_mo{lead}")]
-        if not cols:
-            continue
+# def rmse_by_lead(y_true_df, y_pred_df):
+#     results = {}
+#     for lead in range(12):
+#         cols = [c for c in y_true_df.columns if c.endswith(f"_mo{lead}")]
+#         if not cols:
+#             continue
         
-        yt = y_true_df[cols].to_numpy().ravel()
-        yp = y_pred_df[cols].to_numpy().ravel()
+#         yt = y_true_df[cols].to_numpy().ravel()
+#         yp = y_pred_df[cols].to_numpy().ravel()
         
-        results[lead] = rmse(yt, yp)
+#         results[lead] = rmse(yt, yp)
         
-    return results
+#     return results
 
 # %%
-rmse_model = rmse_by_lead(y_true_abs, y_pred_abs)
-rmse_clim  = rmse_by_lead(y_true_abs, y_clim_abs)
+# rmse_model = rmse_by_lead(y_true_abs, y_pred_abs)
+# rmse_clim  = rmse_by_lead(y_true_abs, y_clim_abs)
 
-skill_by_lead = {
-    lead: 1 - rmse_model[lead] / rmse_clim[lead]
-    for lead in rmse_model
-}
+# skill_by_lead = {
+#     lead: 1 - rmse_model[lead] / rmse_clim[lead]
+#     for lead in rmse_model
+# }
 
-skill_by_lead_df = (
-    pd.DataFrame({
-        "lead": list(skill_by_lead.keys()),
-        "SkillScore": list(skill_by_lead.values())
-    })
-    .sort_values("lead")
-)
+# skill_by_lead_df = (
+#     pd.DataFrame({
+#         "lead": list(skill_by_lead.keys()),
+#         "SkillScore": list(skill_by_lead.values())
+#     })
+#     .sort_values("lead")
+# )
 
-skill_by_lead_df
-
-# %%
-plt.figure(figsize=(8,5))
-plt.plot(skill_by_lead_df["lead"], skill_by_lead_df["SkillScore"], marker="o")
-plt.axhline(0, linewidth=1)
-plt.xlabel("Lead Month")
-plt.ylabel("RMSE Skill Score")
-plt.title("Skill Score Relative to Climatology by Lead Month")
-plt.grid(True)
-plt.show()
+# skill_by_lead_df
 
 # %%
-targets
+# plt.figure(figsize=(8,5))
+# plt.plot(skill_by_lead_df["lead"], skill_by_lead_df["SkillScore"], marker="o")
+# plt.axhline(0, linewidth=1)
+# plt.xlabel("Lead Month")
+# plt.ylabel("RMSE Skill Score")
+# plt.title("Skill Score Relative to Climatology by Lead Month")
+# plt.grid(True)
+# plt.show()
+
+# %%
+# targets
 
 # %% [markdown]
 # # Integrated NBS skill
@@ -1361,461 +1446,446 @@ targets
 # Trying out 1, 3, and 6 month integrated NBS skill
 
 # %%
-def compute_integrated_skill(
-    y_true_df,
-    y_pred_df,
-    variable="superior_target_nbs",
-    window=3
-):
-    """
-    Compute skill on integrated (rolling-sum) lead windows.
+# def compute_integrated_skill(
+#     y_true_df,
+#     y_pred_df,
+#     variable="superior_target_nbs",
+#     window=3
+# ):
+#     """
+#     Compute skill on integrated (rolling-sum) lead windows.
 
-    Parameters
-    ----------
-    y_true_df : pd.DataFrame
-        Reconstructed absolute true values (with _mo{k} columns)
+#     Parameters
+#     ----------
+#     y_true_df : pd.DataFrame
+#         Reconstructed absolute true values (with _mo{k} columns)
 
-    y_pred_df : pd.DataFrame
-        Reconstructed absolute predicted values
+#     y_pred_df : pd.DataFrame
+#         Reconstructed absolute predicted values
 
-    variable : str
-        Base variable name (e.g., 'superior_target_nbs')
+#     variable : str
+#         Base variable name (e.g., 'superior_target_nbs')
 
-    window : int
-        Integration window (1, 3, 6 months)
+#     window : int
+#         Integration window (1, 3, 6 months)
 
-    Returns
-    -------
-    float
-        R² for integrated values
-    """
+#     Returns
+#     -------
+#     float
+#         R² for integrated values
+#     """
 
-    lead_cols = [
-        f"{variable}_mo{k}" for k in range(12)
-        if f"{variable}_mo{k}" in y_true_df.columns
-    ]
+#     lead_cols = [
+#         f"{variable}_mo{k}" for k in range(12)
+#         if f"{variable}_mo{k}" in y_true_df.columns
+#     ]
 
-    y_true_vals = y_true_df[lead_cols].values
-    y_pred_vals = y_pred_df[lead_cols].values
+#     y_true_vals = y_true_df[lead_cols].values
+#     y_pred_vals = y_pred_df[lead_cols].values
 
-    # rolling integration across lead axis
-    integrated_true = []
-    integrated_pred = []
+#     # rolling integration across lead axis
+#     integrated_true = []
+#     integrated_pred = []
 
-    for start in range(len(lead_cols) - window + 1):
-        integrated_true.append(
-            y_true_vals[:, start:start+window].sum(axis=1)
-        )
-        integrated_pred.append(
-            y_pred_vals[:, start:start+window].sum(axis=1)
-        )
+#     for start in range(len(lead_cols) - window + 1):
+#         integrated_true.append(
+#             y_true_vals[:, start:start+window].sum(axis=1)
+#         )
+#         integrated_pred.append(
+#             y_pred_vals[:, start:start+window].sum(axis=1)
+#         )
 
-    integrated_true = np.concatenate(integrated_true)
-    integrated_pred = np.concatenate(integrated_pred)
+#     integrated_true = np.concatenate(integrated_true)
+#     integrated_pred = np.concatenate(integrated_pred)
 
-    return r2_score(integrated_true, integrated_pred)
-
-# %%
-r2_1m = compute_integrated_skill(y_true_abs, y_pred_abs, window=1)
-r2_3m = compute_integrated_skill(y_true_abs, y_pred_abs, window=3)
-r2_6m = compute_integrated_skill(y_true_abs, y_pred_abs, window=6)
-
-print("1-month:", r2_1m)
-print("3-month:", r2_3m)
-print("6-month:", r2_6m)
+#     return r2_score(integrated_true, integrated_pred)
 
 # %%
-def compute_integrated_metrics(
-    y_true_df,
-    y_pred_df,
-    y_clim_df,
-    variable="superior_target_nbs",
-    window=3
-):
-    """
-    Compute integrated metrics for model and climatology baseline.
+# r2_1m = compute_integrated_skill(y_true_abs, y_pred_abs, window=1)
+# r2_3m = compute_integrated_skill(y_true_abs, y_pred_abs, window=3)
+# r2_6m = compute_integrated_skill(y_true_abs, y_pred_abs, window=6)
 
-    Returns:
-        dict with:
-            r2_model
-            r2_climatology
-            skill_score
-    """
-
-    lead_cols = [
-        f"{variable}_mo{k}" for k in range(12)
-        if f"{variable}_mo{k}" in y_true_df.columns
-    ]
-
-    y_true_vals = y_true_df[lead_cols].values
-    y_pred_vals = y_pred_df[lead_cols].values
-    y_clim_vals = y_clim_df[lead_cols].values
-
-    integrated_true = []
-    integrated_pred = []
-    integrated_clim = []
-
-    for start in range(len(lead_cols) - window + 1):
-        integrated_true.append(y_true_vals[:, start:start+window].sum(axis=1))
-        integrated_pred.append(y_pred_vals[:, start:start+window].sum(axis=1))
-        integrated_clim.append(y_clim_vals[:, start:start+window].sum(axis=1))
-
-    integrated_true = np.concatenate(integrated_true)
-    integrated_pred = np.concatenate(integrated_pred)
-    integrated_clim = np.concatenate(integrated_clim)
-
-    r2_model = r2_score(integrated_true, integrated_pred)
-    r2_clim = r2_score(integrated_true, integrated_clim)
-
-    mse_model = mean_squared_error(integrated_true, integrated_pred)
-    mse_clim = mean_squared_error(integrated_true, integrated_clim)
-
-    skill = 1 - (mse_model / mse_clim)
-
-    return {
-        "R2_model": r2_model,
-        "R2_climatology": r2_clim,
-        "Skill_vs_climatology": skill
-    }
+# print("1-month:", r2_1m)
+# print("3-month:", r2_3m)
+# print("6-month:", r2_6m)
 
 # %%
-for w in [1, 3, 6]:
-    metrics = compute_integrated_metrics(
-        y_true_abs,
-        y_pred_abs,
-        y_clim_abs,
-        variable="superior_target_nbs",
-        window=w
-    )
-    print(f"\n{w}-month integration")
-    print(metrics)
+# def compute_integrated_metrics(
+#     y_true_df,
+#     y_pred_df,
+#     y_clim_df,
+#     variable="superior_target_nbs",
+#     window=3
+# ):
+#     """
+#     Compute integrated metrics for model and climatology baseline.
+
+#     Returns:
+#         dict with:
+#             r2_model
+#             r2_climatology
+#             skill_score
+#     """
+
+#     lead_cols = [
+#         f"{variable}_mo{k}" for k in range(12)
+#         if f"{variable}_mo{k}" in y_true_df.columns
+#     ]
+
+#     y_true_vals = y_true_df[lead_cols].values
+#     y_pred_vals = y_pred_df[lead_cols].values
+#     y_clim_vals = y_clim_df[lead_cols].values
+
+#     integrated_true = []
+#     integrated_pred = []
+#     integrated_clim = []
+
+#     for start in range(len(lead_cols) - window + 1):
+#         integrated_true.append(y_true_vals[:, start:start+window].sum(axis=1))
+#         integrated_pred.append(y_pred_vals[:, start:start+window].sum(axis=1))
+#         integrated_clim.append(y_clim_vals[:, start:start+window].sum(axis=1))
+
+#     integrated_true = np.concatenate(integrated_true)
+#     integrated_pred = np.concatenate(integrated_pred)
+#     integrated_clim = np.concatenate(integrated_clim)
+
+#     r2_model = r2_score(integrated_true, integrated_pred)
+#     r2_clim = r2_score(integrated_true, integrated_clim)
+
+#     mse_model = mean_squared_error(integrated_true, integrated_pred)
+#     mse_clim = mean_squared_error(integrated_true, integrated_clim)
+
+#     skill = 1 - (mse_model / mse_clim)
+
+#     return {
+#         "R2_model": r2_model,
+#         "R2_climatology": r2_clim,
+#         "Skill_vs_climatology": skill
+#     }
+
+# %%
+# for w in [1, 3, 6]:
+#     metrics = compute_integrated_metrics(
+#         y_true_abs,
+#         y_pred_abs,
+#         y_clim_abs,
+#         variable="superior_target_nbs",
+#         window=w
+#     )
+#     print(f"\n{w}-month integration")
+#     print(metrics)
 
 # %% [markdown]
 # # Exploring integrated NBS Options
 
 # %%
-def summarize_integrated_skill(
-    y_true_abs,
-    y_clim_abs,
-    model_predictions,
-    variable="superior_target_nbs",
-    windows=(1, 3, 6)
-):
-    """
-    Parameters
-    ----------
-    model_predictions : dict
-        {"Model Name": y_pred_abs_df}
-    """
+# def summarize_integrated_skill(
+#     y_true_abs,
+#     y_clim_abs,
+#     model_predictions,
+#     variable="superior_target_nbs",
+#     windows=(1, 3, 6)
+# ):
+#     """
+#     Parameters
+#     ----------
+#     model_predictions : dict
+#         {"Model Name": y_pred_abs_df}
+#     """
 
-    rows = []
+#     rows = []
 
-    for model_name, y_pred_abs in model_predictions.items():
-        for w in windows:
+#     for model_name, y_pred_abs in model_predictions.items():
+#         for w in windows:
 
-            metrics = compute_integrated_metrics(
-                y_true_abs,
-                y_pred_abs,
-                y_clim_abs,
-                variable=variable,
-                window=w
-            )
+#             metrics = compute_integrated_metrics(
+#                 y_true_abs,
+#                 y_pred_abs,
+#                 y_clim_abs,
+#                 variable=variable,
+#                 window=w
+#             )
 
-            rows.append({
-                "Model": model_name,
-                "Window (months)": w,
-                "R2_model": round(metrics["R2_model"], 3),
-                "R2_climatology": round(metrics["R2_climatology"], 3),
-                "Skill_vs_climatology": round(metrics["Skill_vs_climatology"], 3)
-            })
+#             rows.append({
+#                 "Model": model_name,
+#                 "Window (months)": w,
+#                 "R2_model": round(metrics["R2_model"], 3),
+#                 "R2_climatology": round(metrics["R2_climatology"], 3),
+#                 "Skill_vs_climatology": round(metrics["Skill_vs_climatology"], 3)
+#             })
 
-    return pd.DataFrame(rows)
-
-# %%
-def build_eval_frames(y_test_scaled, y_pred_scaled, y_scaler, y_index, y_columns, scp_y):
-    """
-    Build evaluation DataFrames in three spaces:
-      - anomaly (units after inverse StandardScaler)
-      - absolute reconstructed (lead-aware climatology added back)
-      - absolute climatology-only baseline (lead-aware)
-
-    Returns
-    -------
-    dict with keys: 'anom', 'abs', 'clim_abs'
-      each value is a pd.DataFrame shaped like (n_times, n_targets)
-    """
-    # 1) standardized -> anomaly units
-    y_true_anom = unscale_to_df(y_test_scaled, y_scaler, y_index, y_columns)
-    y_pred_anom = unscale_to_df(y_pred_scaled, y_scaler, y_index, y_columns)
-
-    # 2) anomaly -> absolute (lead-aware)
-    y_true_abs = SeasonalCycleProcessor().add_climatology_back_leadwide(y_true_anom, scp_y)
-    y_pred_abs = SeasonalCycleProcessor().add_climatology_back_leadwide(y_pred_anom, scp_y)
-
-    # 3) climatology-only baseline
-    y_clim_abs = SeasonalCycleProcessor().add_climatology_back_leadwide(y_true_anom * 0.0, scp_y)
-
-    return {
-        "true_anom": y_true_anom,
-        "pred_anom": y_pred_anom,
-        "true_abs": y_true_abs,
-        "pred_abs": y_pred_abs,
-        "clim_abs": y_clim_abs,
-    }
+#     return pd.DataFrame(rows)
 
 # %%
-frames_GP = build_eval_frames(y_test_scaled, y_pred_GP,  y_scaler, y_test.index, y_test.columns, scp_y)
-frames_RF = build_eval_frames(y_test_scaled, y_pred_RFR, y_scaler, y_test.index, y_test.columns, scp_y)
-frames_XGB = build_eval_frames(y_test_scaled, y_pred_XGB, y_scaler, y_test.index, y_test.columns, scp_y)
-frames_NN = build_eval_frames(y_test_scaled, y_pred_NN,  y_scaler, y_test.index, y_test.columns, scp_y)
+# def build_eval_frames(y_test_scaled, y_pred_scaled, y_scaler, y_index, y_columns, scp_y):
+#     """
+#     Build evaluation DataFrames in three spaces:
+#       - anomaly (units after inverse StandardScaler)
+#       - absolute reconstructed (lead-aware climatology added back)
+#       - absolute climatology-only baseline (lead-aware)
+
+#     Returns
+#     -------
+#     dict with keys: 'anom', 'abs', 'clim_abs'
+#       each value is a pd.DataFrame shaped like (n_times, n_targets)
+#     """
+#     # 1) standardized -> anomaly units
+#     y_true_anom = unscale_to_df(y_test_scaled, y_scaler, y_index, y_columns)
+#     y_pred_anom = unscale_to_df(y_pred_scaled, y_scaler, y_index, y_columns)
+
+#     # 2) anomaly -> absolute (lead-aware)
+#     y_true_abs = SeasonalCycleProcessor().add_climatology_back_leadwide(y_true_anom, scp_y)
+#     y_pred_abs = SeasonalCycleProcessor().add_climatology_back_leadwide(y_pred_anom, scp_y)
+
+#     # 3) climatology-only baseline
+#     y_clim_abs = SeasonalCycleProcessor().add_climatology_back_leadwide(y_true_anom * 0.0, scp_y)
+
+#     return {
+#         "true_anom": y_true_anom,
+#         "pred_anom": y_pred_anom,
+#         "true_abs": y_true_abs,
+#         "pred_abs": y_pred_abs,
+#         "clim_abs": y_clim_abs,
+#     }
 
 # %%
-def integrated_summary_for_models(frames_by_model, variable, windows=(1,3,6)):
-    rows = []
-    for model_name, fr in frames_by_model.items():
-        for w in windows:
-            m = compute_integrated_metrics(
-                fr["true_abs"],
-                fr["pred_abs"],
-                fr["clim_abs"],
-                variable=variable,
-                window=w
-            )
-            rows.append({
-                "Model": model_name,
-                "Window": w,
-                "R2_model": round(m["R2_model"], 3),
-                "R2_clim": round(m["R2_climatology"], 3),
-                "Skill": round(m["Skill_vs_climatology"], 3),
-            })
-    return pd.DataFrame(rows)
-
-frames_by_model = {
-    "Gaussian Process": frames_GP,
-    "Random Forest": frames_RF,
-    "XGBoost": frames_XGB,
-    "Neural Network": frames_NN,
-}
-
-integrated_df = integrated_summary_for_models(
-    frames_by_model,
-    variable="superior_target_nbs",
-    windows=(1,3,6)
-)
-
-integrated_df
+# frames_GP = build_eval_frames(y_test_scaled, y_pred_GP,  y_scaler, y_test.index, y_test.columns, scp_y)
+# frames_RF = build_eval_frames(y_test_scaled, y_pred_RFR, y_scaler, y_test.index, y_test.columns, scp_y)
+# frames_XGB = build_eval_frames(y_test_scaled, y_pred_XGB, y_scaler, y_test.index, y_test.columns, scp_y)
+# frames_NN = build_eval_frames(y_test_scaled, y_pred_NN,  y_scaler, y_test.index, y_test.columns, scp_y)
 
 # %%
-skill_pivot = integrated_df.pivot(
-    index="Model",
-    columns="Window",
-    values="Skill"
-).sort_index()
+# def integrated_summary_for_models(frames_by_model, variable, windows=(1,3,6)):
+#     rows = []
+#     for model_name, fr in frames_by_model.items():
+#         for w in windows:
+#             m = compute_integrated_metrics(
+#                 fr["true_abs"],
+#                 fr["pred_abs"],
+#                 fr["clim_abs"],
+#                 variable=variable,
+#                 window=w
+#             )
+#             rows.append({
+#                 "Model": model_name,
+#                 "Window": w,
+#                 "R2_model": round(m["R2_model"], 3),
+#                 "R2_clim": round(m["R2_climatology"], 3),
+#                 "Skill": round(m["Skill_vs_climatology"], 3),
+#             })
+#     return pd.DataFrame(rows)
 
-models = skill_pivot.index
-windows = skill_pivot.columns
+# frames_by_model = {
+#     "Gaussian Process": frames_GP,
+#     "Random Forest": frames_RF,
+#     "XGBoost": frames_XGB,
+#     "Neural Network": frames_NN,
+# }
 
-colors = ["#1b9e77", "#d95f02", "#7570b3"]  # Dark2
+# integrated_df = integrated_summary_for_models(
+#     frames_by_model,
+#     variable="superior_target_nbs",
+#     windows=(1,3,6)
+# )
 
-x = np.arange(len(models))
-width = 0.25
-
-fig, ax = plt.subplots(figsize=(10, 6))
-
-for i, w in enumerate(windows):
-    ax.bar(
-        x + i*width - width,
-        skill_pivot[w],
-        width,
-        label=f"{w}-month",
-        color=colors[i]
-    )
-
-ax.set_xticks(x)
-ax.set_xticklabels(models, rotation=20)
-ax.set_ylabel("Skill vs Climatology")
-ax.set_title("Integrated NBS Skill by Model and Window")
-ax.legend(title="Integration Window")
-ax.grid(axis='y', alpha=0.3)
-
-plt.tight_layout()
-plt.show()
-
-# %%
-fig, ax = plt.subplots(figsize=(8, 5))
-
-c = ax.imshow(skill_pivot.values, aspect='auto')
-
-ax.set_xticks(range(len(windows)))
-ax.set_xticklabels([f"{w}-mo" for w in windows])
-ax.set_yticks(range(len(models)))
-ax.set_yticklabels(models)
-
-ax.set_title("Integrated NBS Skill (vs Climatology)")
-plt.colorbar(c, label="Skill")
-
-# Annotate cells
-for i in range(len(models)):
-    for j in range(len(windows)):
-        ax.text(j, i, f"{skill_pivot.values[i, j]:.2f}",
-                ha="center", va="center", color="white")
-
-plt.tight_layout()
-plt.show()
+# integrated_df
 
 # %%
-import matplotlib.pyplot as plt
-import numpy as np
+# skill_pivot = integrated_df.pivot(
+#     index="Model",
+#     columns="Window",
+#     values="Skill"
+# ).sort_index()
 
-r2_model_pivot = integrated_df.pivot(
-    index="Model",
-    columns="Window",
-    values="R2_model"
-).sort_index()
+# models = skill_pivot.index
+# windows = skill_pivot.columns
 
-models = r2_model_pivot.index
-windows = r2_model_pivot.columns
+# colors = ["#1b9e77", "#d95f02", "#7570b3"]  # Dark2
 
-x = np.arange(len(models))
-width = 0.25
+# x = np.arange(len(models))
+# width = 0.25
 
-fig, ax = plt.subplots(figsize=(10, 6))
+# fig, ax = plt.subplots(figsize=(10, 6))
 
-for i, w in enumerate(windows):
-    ax.bar(
-        x + i*width - width,
-        r2_model_pivot[w],
-        width,
-        label=f"{w}-month",
-        color=colors[i]
-    )
+# for i, w in enumerate(windows):
+#     ax.bar(
+#         x + i*width - width,
+#         skill_pivot[w],
+#         width,
+#         label=f"{w}-month",
+#         color=colors[i]
+#     )
 
-ax.set_xticks(x)
-ax.set_xticklabels(models, rotation=20)
-ax.set_ylabel("R² (Model)")
-ax.set_title("Integrated NBS R² by Model and Window")
-ax.set_ylim(0, 1)
-ax.legend(title="Integration Window")
-ax.grid(axis='y', alpha=0.3)
+# ax.set_xticks(x)
+# ax.set_xticklabels(models, rotation=20)
+# ax.set_ylabel("Skill vs Climatology")
+# ax.set_title("Integrated NBS Skill by Model and Window")
+# ax.legend(title="Integration Window")
+# ax.grid(axis='y', alpha=0.3)
 
-plt.tight_layout()
-plt.show()
+# plt.tight_layout()
+# plt.show()
 
 # %%
-r2_clim_pivot = integrated_df.pivot(
-    index="Model",
-    columns="Window",
-    values="R2_clim"
-).sort_index()
+# fig, ax = plt.subplots(figsize=(8, 5))
 
-models = r2_clim_pivot.index
-windows = r2_clim_pivot.columns
+# c = ax.imshow(skill_pivot.values, aspect='auto')
 
-x = np.arange(len(models))
-width = 0.25
+# ax.set_xticks(range(len(windows)))
+# ax.set_xticklabels([f"{w}-mo" for w in windows])
+# ax.set_yticks(range(len(models)))
+# ax.set_yticklabels(models)
 
-fig, ax = plt.subplots(figsize=(10, 6))
+# ax.set_title("Integrated NBS Skill (vs Climatology)")
+# plt.colorbar(c, label="Skill")
 
-for i, w in enumerate(windows):
-    ax.bar(
-        x + i*width - width,
-        r2_clim_pivot[w],
-        width,
-        label=f"{w}-month",
-        color=colors[i]
-    )
+# # Annotate cells
+# for i in range(len(models)):
+#     for j in range(len(windows)):
+#         ax.text(j, i, f"{skill_pivot.values[i, j]:.2f}",
+#                 ha="center", va="center", color="white")
 
-ax.set_xticks(x)
-ax.set_xticklabels(models, rotation=20)
-ax.set_ylabel("R² (Climatology)")
-ax.set_title("Integrated NBS R² — Climatology Baseline")
-ax.set_ylim(0, 1)
-ax.legend(title="Integration Window")
-ax.grid(axis='y', alpha=0.3)
-
-plt.tight_layout()
-plt.show()
+# plt.tight_layout()
+# plt.show()
 
 # %%
-import matplotlib.pyplot as plt
-import numpy as np
+# import matplotlib.pyplot as plt
+# import numpy as np
 
-colors = ["#1b9e77", "#d95f02", "#7570b3"]  # ColorBrewer Dark2 (colorblind-friendly)
+# r2_model_pivot = integrated_df.pivot(
+#     index="Model",
+#     columns="Window",
+#     values="R2_model"
+# ).sort_index()
 
-def plot_grouped_bars(ax, pivot_df, ylabel, title, colors, ylim=(0, 1)):
-    models = pivot_df.index
-    windows = pivot_df.columns
-    x = np.arange(len(models))
-    width = 0.25
+# models = r2_model_pivot.index
+# windows = r2_model_pivot.columns
 
-    for i, w in enumerate(windows):
-        ax.bar(
-            x + i*width - width,
-            pivot_df[w].values,
-            width,
-            label=f"{w}-month",
-            color=colors[i]
-        )
+# x = np.arange(len(models))
+# width = 0.25
 
-    ax.set_ylabel(ylabel)
-    ax.set_title(title)
-    ax.set_ylim(*ylim)
-    ax.grid(axis="y", alpha=0.3)
-    ax.set_xticks(x)
-    ax.set_xticklabels(models, rotation=20)
+# fig, ax = plt.subplots(figsize=(10, 6))
 
-# Pivot tables
-skill_pivot = integrated_df.pivot(index="Model", columns="Window", values="Skill").sort_index()
-r2_model_pivot = integrated_df.pivot(index="Model", columns="Window", values="R2_model").sort_index()
-r2_clim_pivot  = integrated_df.pivot(index="Model", columns="Window", values="R2_clim").sort_index()
+# for i, w in enumerate(windows):
+#     ax.bar(
+#         x + i*width - width,
+#         r2_model_pivot[w],
+#         width,
+#         label=f"{w}-month",
+#         color=colors[i]
+#     )
 
-# Create stacked figure
-fig, axes = plt.subplots(nrows=3, ncols=1, figsize=(11, 12), sharex=True)
+# ax.set_xticks(x)
+# ax.set_xticklabels(models, rotation=20)
+# ax.set_ylabel("R² (Model)")
+# ax.set_title("Integrated NBS R² by Model and Window")
+# ax.set_ylim(0, 1)
+# ax.legend(title="Integration Window")
+# ax.grid(axis='y', alpha=0.3)
 
-plot_grouped_bars(
-    axes[0], skill_pivot,
-    ylabel="Skill vs Climatology",
-    title="Integrated NBS Skill (Model vs Climatology)",
-    colors=colors,
-    ylim=(0, 0.7)  # skill is usually within [-inf, 1], but your range is positive and < 0.7
-)
-
-plot_grouped_bars(
-    axes[1], r2_model_pivot,
-    ylabel="R² (Model)",
-    title="Integrated NBS R² (Model)",
-    colors=colors,
-    ylim=(0, 1)
-)
-
-plot_grouped_bars(
-    axes[2], r2_clim_pivot,
-    ylabel="R² (Climatology)",
-    title="Integrated NBS R² (Climatology Baseline)",
-    colors=colors,
-    ylim=(0, 1)
-)
-
-# Put one legend for the whole figure
-handles, labels = axes[0].get_legend_handles_labels()
-fig.legend(handles, labels, title="Integration Window", loc="upper right", bbox_to_anchor=(0.98, 0.98))
-
-plt.tight_layout(rect=[0, 0, 0.95, 1])  # leave space for legend
-plt.show()
+# plt.tight_layout()
+# plt.show()
 
 # %%
+# r2_clim_pivot = integrated_df.pivot(
+#     index="Model",
+#     columns="Window",
+#     values="R2_clim"
+# ).sort_index()
 
+# models = r2_clim_pivot.index
+# windows = r2_clim_pivot.columns
+
+# x = np.arange(len(models))
+# width = 0.25
+
+# fig, ax = plt.subplots(figsize=(10, 6))
+
+# for i, w in enumerate(windows):
+#     ax.bar(
+#         x + i*width - width,
+#         r2_clim_pivot[w],
+#         width,
+#         label=f"{w}-month",
+#         color=colors[i]
+#     )
+
+# ax.set_xticks(x)
+# ax.set_xticklabels(models, rotation=20)
+# ax.set_ylabel("R² (Climatology)")
+# ax.set_title("Integrated NBS R² — Climatology Baseline")
+# ax.set_ylim(0, 1)
+# ax.legend(title="Integration Window")
+# ax.grid(axis='y', alpha=0.3)
+
+# plt.tight_layout()
+# plt.show()
 
 # %%
+# import matplotlib.pyplot as plt
+# import numpy as np
 
+# colors = ["#1b9e77", "#d95f02", "#7570b3"]  # ColorBrewer Dark2 (colorblind-friendly)
 
-# %%
+# def plot_grouped_bars(ax, pivot_df, ylabel, title, colors, ylim=(0, 1)):
+#     models = pivot_df.index
+#     windows = pivot_df.columns
+#     x = np.arange(len(models))
+#     width = 0.25
 
+#     for i, w in enumerate(windows):
+#         ax.bar(
+#             x + i*width - width,
+#             pivot_df[w].values,
+#             width,
+#             label=f"{w}-month",
+#             color=colors[i]
+#         )
 
-# %%
+#     ax.set_ylabel(ylabel)
+#     ax.set_title(title)
+#     ax.set_ylim(*ylim)
+#     ax.grid(axis="y", alpha=0.3)
+#     ax.set_xticks(x)
+#     ax.set_xticklabels(models, rotation=20)
 
+# # Pivot tables
+# skill_pivot = integrated_df.pivot(index="Model", columns="Window", values="Skill").sort_index()
+# r2_model_pivot = integrated_df.pivot(index="Model", columns="Window", values="R2_model").sort_index()
+# r2_clim_pivot  = integrated_df.pivot(index="Model", columns="Window", values="R2_clim").sort_index()
 
-# %%
+# # Create stacked figure
+# fig, axes = plt.subplots(nrows=3, ncols=1, figsize=(11, 12), sharex=True)
 
+# plot_grouped_bars(
+#     axes[0], skill_pivot,
+#     ylabel="Skill vs Climatology",
+#     title="Integrated NBS Skill (Model vs Climatology)",
+#     colors=colors,
+#     ylim=(0, 0.7)  # skill is usually within [-inf, 1], but your range is positive and < 0.7
+# )
+
+# plot_grouped_bars(
+#     axes[1], r2_model_pivot,
+#     ylabel="R² (Model)",
+#     title="Integrated NBS R² (Model)",
+#     colors=colors,
+#     ylim=(0, 1)
+# )
+
+# plot_grouped_bars(
+#     axes[2], r2_clim_pivot,
+#     ylabel="R² (Climatology)",
+#     title="Integrated NBS R² (Climatology Baseline)",
+#     colors=colors,
+#     ylim=(0, 1)
+# )
+
+# # Put one legend for the whole figure
+# handles, labels = axes[0].get_legend_handles_labels()
+# fig.legend(handles, labels, title="Integration Window", loc="upper right", bbox_to_anchor=(0.98, 0.98))
+
+# plt.tight_layout(rect=[0, 0, 0.95, 1])  # leave space for legend
+# plt.show()
 
 

@@ -47,13 +47,12 @@
 import pandas as pd
 import os
 import sys
-#import warnings
 
 # Add the path to the src directory (two levels up)
-sys.path.append(os.path.abspath('../../'))
+sys.path.append(os.path.abspath('../../../'))
 from src.data_processor import *
 from src.database_utils import CFSDatabase
-from src.utilities import get_first_forecast_month
+from src.utilities import get_first_forecast_month, format_cep_mean_forecast
 from src.hydro_utils import convert_mm_to_cms
 from src.data_loader import DataLoader
 
@@ -81,7 +80,7 @@ from src.data_loader import DataLoader
 #   - `model_dir` and `scaler_dir` indicate the locations of trained machine learning models and scalers used for prediction.  
 # 
 # - **Models to Run:**  
-#   - `models_info` lists the CNBS prediction models that will be executed (`GP`, `RF`, `NN`, `XGB`).
+#   - `models_info` lists the CNBS prediction models that will be executed (`GP`, `RF`, `XGB`).
 
 # %%
 # Directory where the repository is cloned
@@ -91,7 +90,8 @@ local_path = '/Users/ljob/Desktop/'
 input_dir = local_path + 'cnbs-predictor/data/'
 
 # Path to input CFS forecast database
-cfs_database = local_path + 'cfs_forecast_data.db'
+cfs_database = input_dir + 'cfs/cfs_forecast_data.db'
+#cfs_database = local_path + 'cfs_forecast_data.db'
 cfs_table = 'cfs_forecast_data'
 
 # Path to save CNBS forecast output to a database
@@ -107,7 +107,7 @@ clim_dir = input_dir + "input/climatology/"
 probability_dir = input_dir + "probabilities/"
 
 # List of models to run
-models_info = ['GP', 'RF', 'NN', 'XGB']
+models_info = ['GP', 'RF', 'XGB']
 
 # %% [markdown]
 # # Begin Script
@@ -128,6 +128,7 @@ models_info = ['GP', 'RF', 'NN', 'XGB']
 # Load CFS forecast data from the database and format it before predicting CNBS
 data = CFSDatabase(cfs_database, cfs_table).load()
 
+# %%
 # Filter to only include forecast data for the first forecast month and beyond.
 # This saves time and resources by not including older/archived data.
 data_filtered = CFSTransformer(data).filter()
@@ -213,7 +214,8 @@ X = CFSTransformer(data_filtered).structure_input()
 # The resulting dataframe (`X_anom`) maintains the same structure and dimensions as the original lead-wide dataframe while representing all predictors in anomaly space.
 
 # %%
-X_anom = climatology.subtract_climatology_leadwide(X, scp_X)
+# Calculate anomalies for the input data using the loaded climatology
+X_anom = scp_X.transform(X)
 
 # %% [markdown]
 # ### Add Temporal Features and Reorganize Predictor Columns
@@ -377,8 +379,19 @@ df_melted = df.melt(
 
 df_pivoted = transformer.pivot()
 
-# Optional - Save the pivoted dataframe to a CSV file
-#df_pivoted.to_csv(input_dir + 'forecast/CNBS_forecast_wide.csv', sep='\t', index=False)
+# Save the pivoted dataframe to a database
+#CFSDatabase(cnbs_database, cnbs_table).add_df(df_pivoted)
+
+# %% [markdown]
+# This cell filters the pivoted forecast DataFrame to only include forecasts for the **first valid forecast month** and after, as determined by the `get_first_forecast_month()` function.
+# 
+# **Logic for determining the first forecast month:**
+# - If today’s date is **before the 26th** → use the **current month**.
+# - If today’s date is **on or after the 26th** → use the **next month**.
+# 
+# The `filter` function applies this filter to `df_pivoted`, returning only rows where the `forecast_month` matches the calculated first month and after.
+# 
+# It then pivots the dataframe and calculates the values in [mm] and [cms].
 
 # %% [markdown]
 # ### Example Output:
@@ -430,87 +443,39 @@ df_out = df_out[
 
 df_units = convert_mm_to_cms(df_out)
 
-# Save the final output to a CSV file
-df_units.to_csv(input_dir + "forecast/CNBS_forecast.csv", sep="\t", index=False)
+# This is the final output of the CNBS forecast model.
+# Save the final output to a CSV file AND/OR a database. Comment out either one if you don't want to save to that format.
 
-# %% [markdown]
-# This cell saves the pivoted forecast DataFrame (`df_pivoted`) to a SQLite database for structured storage and easy retrieval.  
-# 
-# - Using a database allows efficient queries, aggregation, and integration with other datasets, enabling downstream analysis and plotting without repeatedly reprocessing the raw forecast data.
+# CSV
+df_units.to_csv(
+    input_dir + "forecast/CNBS_forecast.csv",
+    sep="\t",
+    index=False
+)
 
-# %%
-CFSDatabase(cnbs_database, cnbs_table).add_df(df_pivoted)
+# The database allows you to keep a running record of all forecasts. It checks for duplicates and if they
+# exist, it will update the existing records with the new forecast values.
 
-# %% [markdown]
-# ### Below are other Optional Formats to save Data ###
+# Unique columns to check for duplicates in the database. If a record with the same values in these 
+# columns exists, it will be updated.
+columns = [
+    "cfs_run",
+    "month",
+    "year",
+    "model",
+    "lake",
+    "component",
+]
 
-# %% [markdown]
-# This cell filters the pivoted forecast DataFrame to only include forecasts for the **first valid forecast month** and after, as determined by the `get_first_forecast_month()` function.
-# 
-# **Logic for determining the first forecast month:**
-# - If today’s date is **before the 26th** → use the **current month**.
-# - If today’s date is **on or after the 26th** → use the **next month**.
-# 
-# The `filter` function applies this filter to `df_pivoted`, returning only rows where the `forecast_month` matches the calculated first month and after.
-# 
-# For verification purposes, the function also prints the first forecast month in the format: YYYY-MM.
-
-# %% [markdown]
-# **Optional Step — Calculate Mean by Model and Forecast Month**
-# 
-# This step computes the **mean value of each forecast component** (e.g., precipitation, evaporation, runoff, NBS) for each combination of `model` and `forecast_month`.
-# 
-# **Process:**
-# - Group the filtered forecast DataFrame (`df_filtered`) by `model` and `forecast_month`.
-# - Calculate the mean of all numeric columns within each group (`numeric_only=True` ensures non-numeric columns are ignored).
-# - Return a summarized DataFrame (`df_mean`) where each row represents the average forecast values for a given model and forecast month.
-# 
-# This aggregated dataset is useful for:
-# - Comparing models at the monthly scale.
-# - Generating cleaner plots by removing run-to-run noise.
-# - Preparing data for ensemble analysis.
-
-# %%
-df_filtered = ForecastTransformer(df_pivoted).filter(first_forecast_month)
-#df_mean = (
-#    df_filtered
-#      .groupby(["model", "forecast_month", "lake"], as_index=False)
-#      .mean(numeric_only=True)
-#)
-
-# Save to a CSV [mm]
-#df_mean.to_csv(input_dir + 'forecast/CNBS_model_mean_forecast.csv', sep='\t', index=False)
-
-# %% [markdown]
-# **Optional Step — Calculate Overall Mean Across All Model Ensembles**
-# 
-# This step calculates the **overall mean forecast** for each `forecast_month` by combining results from **all model ensembles**.
-# 
-# **Process:**
-# - Group the filtered forecast DataFrame (`df_filtered`) by `forecast_month` only, ignoring model differences.
-# - Compute the mean of all numeric columns (`numeric_only=True`), rounding values to three decimal places for cleaner output.
-# - Save the resulting dataset (`df_all_mean`) as a tab-delimited CSV file (`CNBS_forecast.csv`) for record-keeping or sharing.
-# 
-# **Purpose:**
-# - Provides a **single ensemble mean forecast** for each month.
-# - Useful for quick summaries, reports, or when model-level detail is not required.
-
-# %%
-#df_all_mean = (
-#    df_filtered
-#      .groupby(["forecast_month"], as_index=False)
-#      .mean(numeric_only=True).round(3)
-#)
-
-# Save to a CSV [mm]
-#df_all_mean.to_csv(input_dir + 'forecast/CNBS_overall_mean_forecast.csv', sep='\t', index=False)
+CFSDatabase(cnbs_database, cnbs_table).add_df(df_units, unique_columns=columns)
+print("CNBS forecast data saved to database and CSV file.")
 
 # %% [markdown]
 # ## Climatology Exceedance Probability
 # 
 # **Climatology Exceedance Probability (CEP)**, also referred to as **Probability of Exceedance (POE)** by USACE, is the fraction of historical climatological values that exceed a given forecast value for a specific variable, location, and time period. It quantifies where the forecast falls within the climatological distribution and is calculated as the probability that a climatological value is greater than the forecast value.
 # 
-# A higher DEI indicates a drier-than-normal forecast (lower forecast values relative to climatology), while a lower DEI indicates a wetter-than-normal forecast (higher forecast values relative to climatology).
+# A higher CEP indicates a drier-than-normal forecast (lower forecast values relative to climatology), while a lower DEI indicates a wetter-than-normal forecast (higher forecast values relative to climatology).
 # 
 # Interpretation:
 # 
@@ -533,15 +498,73 @@ df_filtered = ForecastTransformer(df_pivoted).filter(first_forecast_month)
 # `forecast/climatology_exceedance_probabilities.csv`
 
 # %%
-prob = DataLoader().lake_probabilities(probability_dir, units="mm")
+# Calculate the mean of the forecasts for each model, lake, and component
+df = df_units.copy()
 
+df_mean = (
+    df.groupby(
+        ["year", "month", "model", "lake", "component"],
+        as_index=False
+    )[["value [mm]", "value [cms]"]]
+    .mean()
+)
+
+# %%
+# Read in the lake probabilities and calculate the climatology exceedance probabilities (CEP) for the NBS forecast data.
+prob = DataLoader().lake_probabilities(probability_dir, units="cms")
 cep_calc = CEPCalculator(prob)
 
 cep_calc.align_prob_with_start_date(first_forecast_month)
 
+df_filtered = ForecastTransformer(df_mean).filter(first_forecast_month)
+
 df_cep = cep_calc.calculate_cep(
     df=df_filtered,
-    output_file=input_dir + 'forecast/climatology_exceedance_probabilities.csv'
+    date_col=["year", "month"],
+    component="nbs",
+    value_col="value [cms]",
+    output_file=input_dir + "forecast/climatology_exceedance_probabilities.csv"
+)
+
+# %% [markdown]
+# ### Formatting Climatology Exceedance Probabilities (CEP)
+# 
+# This cell takes the **CEP** and formats to look similarly to a USACE worksheet. The goal of this formatting is to make it easier to read and compare to other models during official forecast day.
+# 
+# #### Example CEP Forecast Format
+# 
+# The CEP forecast dataframe is formatted with one row per lake and forecast month.  
+# Each model provides a CEP value, along with the ensemble mean across all models.
+# 
+# | Lake | Year | Month | RF | GP | XGB | Mean |
+# |:----:|:----:|:-----:|:--:|:--:|:---:|:----:|
+# | SUP | 2026 | Aug | 0.57 | 0.11 | 0.11 | 0.31 |
+# |  | 2026 | Sep | 0.50 | 0.10 | 0.22 | 0.21 |
+# |  | 2026 | Oct | 0.29 | 0.04 | 0.17 | 0.18 |
+# |  | 2026 | Nov | 0.37 | 0.15 | 0.27 | 0.20 |
+# |  | 2026 | Dec | 0.29 | 0.05 | 0.01 | 0.09 |
+# |  | 2027 | Jan | 0.41 | 0.23 | 0.34 | 0.25 |
+# |  | 2027 | Feb | 0.51 | 0.48 | 0.16 | 0.33 |
+# |  | 2027 | Mar | 0.36 | 0.36 | 0.26 | 0.30 |
+# |  | 2027 | Apr | 0.40 | 0.69 | 0.25 | 0.43 |
+# |  | 2027 | May | 0.56 | 0.70 | 0.54 | 0.65 |
+# |  | 2027 | Jun | 0.53 | 0.49 | 0.47 | 0.59 |
+# |  | 2027 | Jul | 0.58 | 0.31 | 0.33 | 0.55 |
+# 
+# **Columns:**
+# - **Lake**: Great Lake abbreviation (SUP, MIH, ERI, ONT)
+# - **Year / Month**: Forecast period
+# - **RF, GP, XGB**: CEP values from each machine learning model
+# - **Mean**: Average CEP across all models
+# 
+# The resulting dataframe is saved to:
+# `forecast/climatology_exceedance_formatted.csv`
+
+# %%
+df_final = format_cep_mean_forecast(
+    df_cep,
+    models=models_info,
+    output_file=input_dir + "forecast/ensemble_mean_formatted.csv"
 )
 
 
